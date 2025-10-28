@@ -14,7 +14,8 @@ class GLU(nnx.Module):
 
 
 class Attention(nnx.Module):
-    def __init__(self, hidden_dim, num_attention_heads, num_key_value_heads, head_dim, rope_theta,rngs):
+    def __init__(self, hidden_dim, num_attention_heads, num_key_value_heads, head_dim, rope_theta, rngs):
+        self.rope_theta = rope_theta
         self.q_proj = nnx.LinearGeneral(hidden_dim, (num_attention_heads, head_dim), dtype=jnp.bfloat16, rngs=rngs)
         self.k_proj = nnx.LinearGeneral(hidden_dim, (num_key_value_heads, head_dim), dtype=jnp.bfloat16, rngs=rngs)
         self.v_proj = nnx.LinearGeneral(hidden_dim, (num_key_value_heads, head_dim), dtype=jnp.bfloat16, rngs=rngs)
@@ -24,8 +25,8 @@ class Attention(nnx.Module):
         q, k, v = self.q_proj(x), self.k_proj(x), self.v_proj(x)
         if self.rope_theta:
             positions = jnp.arange(x.shape[1])[None, :]
-            q = apply_rope(q, positions, self.rope_theta)
-            k = apply_rope(k, positions, self.rope_theta)
+            q = apply_rope(q, positions, base_frequency=self.rope_theta)
+            k = apply_rope(k, positions, base_frequency=self.rope_theta)
         att = jax.nn.dot_product_attention(query=q, key=k, value=v, is_causal=False)
         return self.o_proj(att)
     

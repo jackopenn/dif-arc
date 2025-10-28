@@ -1,3 +1,4 @@
+from functools import reduce, partial
 import jax
 import jax.numpy as jnp
 from flax import nnx
@@ -19,6 +20,7 @@ class Model(nnx.Module):
         rope_theta,
         rngs
     ):
+    
         self.embed = nnx.Embed(vocab_size, hidden_dim, dtype=jnp.bfloat16, rngs=rngs)
         self.unembed = self.embed.attend if tie_embeddings else nnx.Linear(hidden_dim, vocab_size, dtype=jnp.bfloat16, rngs=rngs)
         self.layers = nnx.List([
@@ -42,7 +44,8 @@ class Model(nnx.Module):
     def output_head(self, x):
         return self.unembed(x)
 
-    def __call__(self, x):
+    def __call__(self, *x):
+        x = reduce(jnp.add, x)
         for layer in self.layers:
             x = layer(x)
         return x
