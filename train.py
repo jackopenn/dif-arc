@@ -1,18 +1,82 @@
 import jax
-from jax import numpy as jnp
+import jax.numpy as jnp
 from flax import nnx
+import optax
+from sws import Config
 
-from model import Model, ModelConfig
+from dataset import get_data_loader
+from modelling.model import Model
 
-model_config = ModelConfig(
-    vocab_size=10000,
-    hidden_dim=256,
-    num_layers=12,
-    num_attention_heads=16,
-    num_key_value_heads=16,
-    head_dim=16,
-    act_fn=jax.nn.gelu,
-    intermediate_dim=1024,
-)
+cfg = Config()
+cfg.seed = 69420
 
-model  = Model(model_config)
+cfg.model.vocab_size = 10
+cfg.model.hidden_dim = 512
+cfg.model.intermediate_dim = 2048
+cfg.model.num_layers = 2
+cfg.model.num_attention_heads = 8
+cfg.model.num_key_value_heads = 8
+cfg.model.head_dim = lambda: cfg.model.hidden_dim // cfg.model.num_attention_heads
+cfg.model.act_fn = "swish"
+cfg.model.tie_embeddings = True
+cfg.model.rope_theta = 10000
+
+cfg.recursion.N_supervision = 16
+cfg.recursion.n = 3
+cfg.recursion.T = 6
+
+cfg.optim.learning_rate = 1e-4
+cfg.optim.weight_decay = 0.01
+
+cfg.data.train_data_dir = "data/training"
+cfg.data.batch_size = 2
+
+cfg = cfg.finalize()
+
+key = jax.random.key(cfg.seed)
+model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
+optimizer = nnx.Optimizer(model, optax.adamw(**cfg.optim.to_dict()), wrt=nnx.Param)
+initializer = jax.nn.initializers.truncated_normal()
+train_data_loader = get_data_loader(cfg.data.train_data_dir, cfg.data.batch_size)
+
+
+def loss_fn(model, x_input, y_true, y,z, n, T):
+    def latent_recursion(x, y, z, n):
+        for _ in range(n):
+            z = model(x, y, z)
+        y = model(y, z)
+        return y, z
+
+    def deep_recursion(x, y, z, n, T):
+        for _ in range(T-1):
+            y, z = latent_recursion(x, y, z, n)
+        y, z = jax.lax.stop_gradient(y), jax.lax.stop_gradient(z)
+        y, z = latent_recursion(x, y, z, n)
+        return (y, z), model.output_head(y), model.Q_head(z)
+    
+    x = model.input_embedding(x_input)
+    (y, z), y_hat, q_hat = deep_recursion(x, y, z, n, T)
+    y_loss = optax.softmax_cross_entropy_with_integer_labels(y_hat, y_true).mean()
+    Q_loss = optax.sigmoid_binary_cross_entropy(q_hat, (y_hat == y_true)).mean()
+    loss = y_loss + Q_loss
+    return loss, (y_loss, Q_loss, y, z)
+
+
+@nnx.jit
+def train_step(model, optimizer, batch, N_supervision, n, T):
+    x_input, y_true = batch
+    key, y_key, z_key = jax.random.split(key, 3)
+    y = initializer(y_key, (model.hidden_dim,), jnp.bfloat16)
+    z = initializer(z_key, (model.hidden_dim,), jnp.bfloat16)
+    losses = []
+    for _ in range(N_supervision):
+        grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
+        (loss, (y_loss, Q_loss, y, z)), grads = grad_fn(model, x_input, y_true, y, z, n, T)
+        optimizer.update(model, grads)
+        losses.append((y_loss, Q_loss))
+    return losses
+
+
+for batch in train_data_loader:
+    print(batch)
+    break
