@@ -20,29 +20,29 @@ def get_config():
     cfg.seed = 69420
     
     cfg.model.vocab_size = 10 + 1 # +1 for padding
-    cfg.model.hidden_dim = 16
-    cfg.model.intermediate_dim = 64
-    cfg.model.num_layers = 1
-    cfg.model.num_attention_heads = 1
-    cfg.model.num_key_value_heads = 1
+    cfg.model.hidden_dim = 512
+    cfg.model.intermediate_dim = 2048
+    cfg.model.num_layers = 2
+    cfg.model.num_attention_heads = 8
+    cfg.model.num_key_value_heads = 8
     cfg.model.head_dim = lambda: cfg.model.hidden_dim // cfg.model.num_attention_heads
     cfg.model.act_fn = "swish"
-    cfg.model.tie_embeddings = True
+    cfg.model.tie_embeddings = False
     cfg.model.rope_theta = 10000
     
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
     
-    cfg.recursion.N_supervision = 16
+    cfg.recursion.N_supervision = 2
     cfg.recursion.n = 4
     cfg.recursion.T = 2
     
     cfg.optim.learning_rate = 1e-4
-    cfg.optim.warmup_steps = 100
+    cfg.optim.warmup_steps = 50
     cfg.optim.max_steps = 20000
     cfg.optim.weight_decay = 0.1
 
     cfg.data.data_dir = "data/arc-aug-10"
-    cfg.data.batch_size = 16
+    cfg.data.batch_size = 128
     return cfg
 
 def main(cfg):
@@ -73,11 +73,11 @@ def main(cfg):
     def loss_fn(model, x_input, aug_puzzle_idx, y_true, y,z, n, T):
         x = model.input_embedding(x_input, aug_puzzle_idx)
         (y, z), y_hat, q_hat = deep_recursion(model, x, y, z, n, T)
+
         y_loss = optax.softmax_cross_entropy_with_integer_labels(
             y_hat.reshape(-1, y_hat.shape[-1]).astype(jnp.float32),
-            y_true.reshape(-1),
-            where=y_true.reshape(-1) < 10
-        ).mean()
+            y_true.reshape(-1)
+        ).mean(where=y_true.reshape(-1) < 10)
         # Q_loss = optax.sigmoid_binary_cross_entropy(q_hat, (y_hat == y_true)).mean()
         Q_loss = 0
         loss = y_loss + Q_loss
@@ -115,10 +115,6 @@ def main(cfg):
             for _ in range(T-1):
                 y, z = latent_recursion(model, x, y, z, n)
             # 1-step approx BPTT
-            # print(s)
-            # print(y)
-            # print(z)
-            # print()
             grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
             (_, (step_metrics, y, z)), grads = grad_fn(model, x_input, aug_puzzle_idx, y_true, y, z, n, T)
             optimizer.update(model, grads)
@@ -133,11 +129,6 @@ def main(cfg):
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
 
     for step, batch in enumerate(train_data_loader):
-        # bbatch = {
-        #     "aug_puzzle_idx": jnp.array([[1283]]),
-        #     "x": jnp.array([[8, 8, 8, 8, 6, 8, 6, 6, 6]]),
-        #     "y": jnp.array([[5, 5, 1, 5, 1, 5, 1, 5, 5]])
-        # }
         metrics= train_step(model, optimizer, batch, y_init, z_init, cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,)
 
         print(f"step {step}: ", end="")
