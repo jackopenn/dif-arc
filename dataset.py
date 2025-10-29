@@ -5,11 +5,12 @@ from functools import partial
 import grain
 import jax
 import jax.numpy as jnp
+from tqdm import tqdm
 
 
 class JsonDataSource(grain.sources.RandomAccessDataSource):
     def __init__(self, file_path):
-        self.data = [json.loads(line.strip()) for line in open(file_path, 'r').readlines()] 
+        self.data = [json.loads(line.strip()) for line in tqdm(open(file_path, 'r').readlines())] 
 
     def __len__(self):
         return len(self.data)
@@ -21,11 +22,12 @@ class JsonDataSource(grain.sources.RandomAccessDataSource):
 class Parse(grain.transforms.Map):
     def map(self, record):
         return {
-            # **record,
             "x": jnp.asarray(record["x"]),
             "y": jnp.asarray(record["y"]),
             "colour_aug": jnp.asarray(record["colour_aug"]),
-            "d8_aug": jnp.asarray([record["d8_aug"]])
+            "d8_aug": jnp.asarray([record["d8_aug"]]),
+            "example_idx": jnp.asarray([record["example_idx"]]),
+            "aug_puzzle_idx": jnp.asarray([record["aug_puzzle_idx"]]),
         }
 
         
@@ -38,7 +40,7 @@ class Pad(grain.transforms.Map):
             x,
             pad_width=((0, self.max_grid_size - x.shape[0]), (0, self.max_grid_size - x.shape[1])),
             mode="constant",
-            constant_values=-1
+            constant_values=10
         )
     
     def map(self, record):

@@ -13,6 +13,7 @@ dependencies = [
     "optax>=0.2.6",
     "sws-config>=0.6.0",
     "tqdm>=4.67.1",
+    "wandb>=0.22.3",
 ]
 
 [project.optional-dependencies]

@@ -18,9 +18,10 @@ class Model(nnx.Module):
         act_fn,
         tie_embeddings,
         rope_theta,
+        puzzle_vocab_size,
         rngs
     ):
-    
+        self.puzzle_emb = nnx.Embed(puzzle_vocab_size, hidden_dim, dtype=jnp.bfloat16, rngs=rngs)
         self.embed = nnx.Embed(vocab_size, hidden_dim, dtype=jnp.bfloat16, rngs=rngs)
         self.unembed = self.embed.attend if tie_embeddings else nnx.Linear(hidden_dim, vocab_size, dtype=jnp.bfloat16, rngs=rngs)
         self.layers = nnx.List([
@@ -36,13 +37,16 @@ class Model(nnx.Module):
             )
             for _ in range(num_layers)
         ])
-        self.Q_head = nnx.Linear(hidden_dim, 1, rngs=rngs)
+        self.q_head = nnx.Linear(hidden_dim, 1, rngs=rngs)
     
-    def input_embedding(self, x):
-        return self.embed(x)
+    def input_embedding(self, x, aug_puzzle_idx):
+        return jnp.concatenate([self.puzzle_emb(aug_puzzle_idx), self.embed(x)], axis=1) # * jnp.sqrt(x.shape[-1])
 
     def output_head(self, x):
-        return self.unembed(x)
+        return self.unembed(x[:, 1:, :])
+
+    def Q_head(self, x):
+        return self.q_head(x[:, 0, :])
 
     def __call__(self, *x):
         x = reduce(jnp.add, x)
