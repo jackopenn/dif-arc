@@ -21,7 +21,7 @@ def get_config():
     
     cfg.model.vocab_size = 10 + 1 # +1 for padding
     cfg.model.hidden_dim = 512
-    cfg.model.intermediate_dim = 2048
+    cfg.model.intermediate_dim = lambda: 4 * cfg.model.hidden_dim
     cfg.model.num_layers = 2
     cfg.model.num_attention_heads = 8
     cfg.model.num_key_value_heads = 8
@@ -29,32 +29,39 @@ def get_config():
     cfg.model.act_fn = "swish"
     cfg.model.tie_embeddings = False
     cfg.model.rope_theta = 10000
-    
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
     
-    cfg.recursion.N_supervision = 2
-    cfg.recursion.n = 4
-    cfg.recursion.T = 2
+    cfg.recursion.N_supervision = 16
+    cfg.recursion.n = 6
+    cfg.recursion.T = 3
     
-    cfg.optim.learning_rate = 1e-4
-    cfg.optim.warmup_steps = 50
-    cfg.optim.max_steps = 20000
     cfg.optim.weight_decay = 0.1
+    cfg.optim.beta_1 = 0.9
+    cfg.optim.beta_2 = 0.95
+
+
+    # TODO: embeddings have diff lr
+    cfg.schedule.init_value = 0
+    cfg.schedule.peak_value = 1e-4  
+    cfg.schedule.warmup_steps = 2000
+
+    cfg.max_steps = 100000
 
     cfg.data.data_dir = "data/arc-aug-10"
-    cfg.data.batch_size = 128
+    cfg.data.batch_size = 768
+
     return cfg
+
 
 def main(cfg):
     key = jax.random.key(cfg.seed)
+    
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
-    schedule_fn = optax.warmup_constant_schedule(
-        init_value=0,
-        peak_value=cfg.optim.learning_rate,
-        warmup_steps=cfg.optim.warmup_steps,
-    )
-    tx = optax.adamw(schedule_fn, weight_decay=cfg.optim.weight_decay)
+
+    schedule_fn = optax.warmup_constant_schedule(**cfg.schedule.to_dict())
+    tx = optax.adamw(schedule_fn, **cfg.optim.to_dict())
     optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
+
     train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.batch_size)
     
     
@@ -78,6 +85,7 @@ def main(cfg):
             y_hat.reshape(-1, y_hat.shape[-1]).astype(jnp.float32),
             y_true.reshape(-1)
         ).mean(where=y_true.reshape(-1) < 10)
+        # TODO: add Q loss
         # Q_loss = optax.sigmoid_binary_cross_entropy(q_hat, (y_hat == y_true)).mean()
         Q_loss = 0
         loss = y_loss + Q_loss
@@ -136,6 +144,7 @@ def main(cfg):
             print(f"{metric_name}: {metric}", end=", ")
         print()
 
+        # TODO async logging
         log_metrics = {}
         for supervision_step, step_metrics in enumerate(metrics):
             for metric_name, metric in step_metrics.items():
