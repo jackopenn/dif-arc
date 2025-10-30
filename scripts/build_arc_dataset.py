@@ -12,10 +12,10 @@ from sws import Config, run
 def get_config():
     cfg = Config()
     cfg.input_dir = "data"
-    cfg.output_dir = "data/arc-aug-10"
+    cfg.output_dir = "data/arc-aug-100"
     cfg.subsets = ["training", "evaluation"]
     cfg.test_set = "evaluation"
-    cfg.n_augs = 10
+    cfg.n_augs = 100
     cfg.seed = 69420    
     return cfg
 

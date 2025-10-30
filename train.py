@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+from jax.sharding import NamedSharding, Mesh, PartitionSpec as P
 from flax import nnx
 import optax
 import json
@@ -50,6 +51,8 @@ def get_config():
     cfg.data.data_dir = "data/arc-aug-10"
     cfg.data.batch_size = 768
 
+    cfg.parallel.n_devices = 8
+
     return cfg
 
 
@@ -57,13 +60,30 @@ def main(cfg):
     key = jax.random.key(cfg.seed)
     
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
+    optimizer = nnx.Optimizer(
+        model,
+        optax.adamw(optax.warmup_constant_schedule(**cfg.schedule.to_dict()), **cfg.optim.to_dict()),
+        wrt=nnx.Param,
+    )
 
-    schedule_fn = optax.warmup_constant_schedule(**cfg.schedule.to_dict())
-    tx = optax.adamw(schedule_fn, **cfg.optim.to_dict())
-    optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
+    shard_batch = lambda batch: batch
+    if cfg.parallel.n_devices > 1:
+        mesh = jax.make_mesh((cfg.parallel.n_devices,), ("data",))
+        jax.set_mesh(mesh)
 
-    train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.batch_size)
-    
+        repl_sharding = NamedSharding(mesh, P())
+        data_sharding = NamedSharding(mesh, P("data", None))
+
+        model_state = nnx.state(model)
+        sharded_model_state = jax.lax.with_sharding_constraint(model_state, repl_sharding)
+        model = nnx.update(model, sharded_model_state)
+        
+        optimizer_state = nnx.state(optimizer)
+        sharded_optimizer_state = jax.lax.with_sharding_constraint(optimizer_state, repl_sharding)
+        optimizer = nnx.update(optimizer, sharded_optimizer_state)
+
+        shard_batch = lambda batch: jax.tree.map(lambda x: jax.device_put(x, data_sharding), batch)
+
     
     def latent_recursion(model, x, y, z, n):
         for _ in range(n):
@@ -136,7 +156,11 @@ def main(cfg):
     y_init = initializer(y_key, (cfg.model.hidden_dim,), jnp.bfloat16)
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
 
-    for step, batch in enumerate(train_data_loader):
+    train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.batch_size)
+    train_iter = (shard_batch(batch) for batch in train_data_loader)
+
+    for step, batch in enumerate(train_iter):
+        batch = shard_batch(batch)
         metrics= train_step(model, optimizer, batch, y_init, z_init, cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,)
 
         print(f"step {step}: ", end="")
