@@ -32,19 +32,19 @@ def get_config():
     cfg.model.rope_theta = 10000
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
     
-    cfg.recursion.N_supervision = 16
-    cfg.recursion.n = 6
-    cfg.recursion.T = 3
+    cfg.recursion.N_supervision = 4
+    cfg.recursion.n = 4
+    cfg.recursion.T = 2
     
     cfg.optim.weight_decay = 0.1
-    cfg.optim.beta_1 = 0.9
-    cfg.optim.beta_2 = 0.95
+    cfg.optim.b1 = 0.9
+    cfg.optim.b2 = 0.95
 
 
     # TODO: embeddings have diff lr
     cfg.schedule.init_value = 0
     cfg.schedule.peak_value = 1e-4  
-    cfg.schedule.warmup_steps = 2000
+    cfg.schedule.warmup_steps = 100
 
     cfg.max_steps = 100000
 
@@ -74,13 +74,13 @@ def main(cfg):
         repl_sharding = NamedSharding(mesh, P())
         data_sharding = NamedSharding(mesh, P("data", None))
 
-        model_state = nnx.state(model)
+        _, model_state = nnx.split(model)
         sharded_model_state = jax.lax.with_sharding_constraint(model_state, repl_sharding)
-        model = nnx.update(model, sharded_model_state)
+        nnx.update(model, sharded_model_state)
         
-        optimizer_state = nnx.state(optimizer)
+        _, optimizer_state = nnx.split(optimizer)
         sharded_optimizer_state = jax.lax.with_sharding_constraint(optimizer_state, repl_sharding)
-        optimizer = nnx.update(optimizer, sharded_optimizer_state)
+        nnx.update(optimizer, sharded_optimizer_state)
 
         shard_batch = lambda batch: jax.tree.map(lambda x: jax.device_put(x, data_sharding), batch)
 
