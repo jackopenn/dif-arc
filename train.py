@@ -99,6 +99,7 @@ def main(cfg):
         step: jax.Array
         halted: jax.Array
     
+    
     def init_carry(batch, z_init, y_init, hidden_dim):
         """initialize the carry with the initial data"""
         batch_size = batch['x'].shape[0]
@@ -108,15 +109,16 @@ def main(cfg):
             z_init = jax.device_put(z_init, NamedSharding(mesh, P("data", None, None)))
             y_init = jax.device_put(y_init, NamedSharding(mesh, P("data", None, None)))
         return Carry(
-            z=z_init, # (batch_size, 901, hidden_dim)
-            y=y_init, # (batch_size, 901, hidden_dim)
-            x_input=batch['x'],                                        # (batch_size, 900)
-            aug_puzzle_idx=batch['aug_puzzle_idx'],                    # (batch_size,)
-            y_true=batch['y'],                                         # (batch_size, 900)
-            step=jnp.zeros((batch_size, ), dtype=jnp.int32),           # (batch_size,)
-            halted=jnp.zeros((batch_size, ), dtype=jnp.bool_),         # (batch_size,)
+            z=z_init,                                         # (batch_size, 901, hidden_dim)
+            y=y_init,                                         # (batch_size, 901, hidden_dim)
+            x_input=batch['x'],                               # (batch_size, 900)
+            aug_puzzle_idx=batch['aug_puzzle_idx'],           # (batch_size,)
+            y_true=batch['y'],                                # (batch_size, 900)
+            step=jnp.zeros((batch_size, ), dtype=jnp.int32),  # (batch_size,)
+            halted=jnp.zeros((batch_size, ), dtype=jnp.bool_) # (batch_size,)
         )
     
+
     def pre_update_carry(carry, batch, z_init, y_init):
         """update the carry with new data from batch (if halted)"""
         return Carry(
@@ -129,6 +131,7 @@ def main(cfg):
             halted=jnp.where(carry.halted, False, carry.halted),
         )
     
+
     def post_update_carry(carry, q_logits, z, y, N_supervision):
         """update the halt flag if step >= N_supervision or q_logits > 0"""
         step = carry.step + 1
@@ -144,6 +147,7 @@ def main(cfg):
             halted=halted,
         )
         
+
     def latent_recursion(model, x, y, z, n):
         for _ in range(n):
             z = model(x, y, z)

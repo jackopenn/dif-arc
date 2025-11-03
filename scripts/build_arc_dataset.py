@@ -16,6 +16,7 @@ def get_config():
     cfg.subsets = ["training", "evaluation"]
     cfg.test_set = "evaluation"
     cfg.n_augs = 100
+    cfg.bg_cololour_aug = False # False: keep background black
     cfg.seed = 69420    
     return cfg
 
@@ -97,7 +98,11 @@ def main(cfg):
         while current_augs < cfg.n_augs:
             key, op_key, colour_key = jax.random.split(key, 3)
             op_idx = jax.random.randint(op_key, (), 0, 8).item()
-            colours = jax.random.permutation(colour_key, jnp.arange(10))
+            if cfg.bg_cololour_aug:
+                colours = jax.random.permutation(colour_key, jnp.arange(10))
+            else:
+                # keep background black (0)
+                colours = jnp.concatenate([jnp.array([0]), jax.random.permutation(colour_key, jnp.arange(1, 10))])
 
             aug_puzzle = {
                 "puzzle_id": puzzle['puzzle_id'],
