@@ -51,9 +51,9 @@ def get_config():
     cfg.max_steps = 100_000
 
     cfg.data.data_dir = "data/arc-aug-10"
-    cfg.data.batch_size = 4
+    cfg.data.batch_size = 768
 
-    cfg.parallel.n_devices = 1
+    cfg.parallel.n_devices = 4
 
     return cfg
 
