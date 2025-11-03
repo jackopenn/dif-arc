@@ -14,12 +14,10 @@ from dataset import get_data_loader
 from modelling.model import Model
 from utils import MetricLogger
 
-# TODO: param the * sqrt(dim)
-# TODO: param use_bias
-# TODO: param q_head init
 # TODO: log epochs
 # TODO: move 1000 aug to cloud
 # TODO: add eval loop (match augs in eval set)
+
 def get_config():
     
     def get_puzzle_vocab_size(data_dir):
@@ -37,6 +35,7 @@ def get_config():
     cfg.model.head_dim = lambda: cfg.model.hidden_dim // cfg.model.num_attention_heads
     cfg.model.act_fn = "swish"
     cfg.model.tie_embeddings = False
+    cfg.model.use_bias = False
     cfg.model.rope_theta = 10000
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
     
@@ -227,7 +226,10 @@ def main(cfg):
         return carry, metrics
     
     # init logging 
-    wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
+    if cfg.wandb:
+        wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
+    else:
+        wandb = None
     train_logger = MetricLogger(batch_size=cfg.data.batch_size, wandb=wandb)
 
     # init latents

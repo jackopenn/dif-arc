@@ -5,3 +5,4 @@ wandb/
 data/
 !data/training/
 !data/evaluation/
+profile/

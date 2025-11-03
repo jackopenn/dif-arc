@@ -3,10 +3,10 @@ import jax.numpy as jnp
 from flax import nnx
 
 class GLU(nnx.Module):
-    def __init__(self, hidden_dim, intermediate_dim, act_fn, rngs):
-        self.up_proj = nnx.Linear(hidden_dim, intermediate_dim, use_bias=False, dtype=jnp.bfloat16, rngs=rngs)
-        self.gate_proj = nnx.Linear(hidden_dim, intermediate_dim, use_bias=False, dtype=jnp.bfloat16, rngs=rngs)
-        self.down_proj = nnx.Linear(intermediate_dim, hidden_dim, use_bias=False, dtype=jnp.bfloat16, rngs=rngs)
+    def __init__(self, hidden_dim, intermediate_dim, act_fn, use_bias, rngs):
+        self.up_proj = nnx.Linear(hidden_dim, intermediate_dim, use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
+        self.gate_proj = nnx.Linear(hidden_dim, intermediate_dim, use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
+        self.down_proj = nnx.Linear(intermediate_dim, hidden_dim, use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
         self.act_fn = nnx.swish if act_fn == "swish" else nnx.gelu if act_fn == "gelu" else None
 
     def __call__(self, x):
@@ -14,12 +14,12 @@ class GLU(nnx.Module):
 
 
 class Attention(nnx.Module):
-    def __init__(self, hidden_dim, num_attention_heads, num_key_value_heads, head_dim, rope_theta, rngs):
+    def __init__(self, hidden_dim, num_attention_heads, num_key_value_heads, head_dim, rope_theta, use_bias, rngs):
         self.rope_theta = rope_theta
-        self.q_proj = nnx.LinearGeneral(hidden_dim, (num_attention_heads, head_dim), use_bias=False, dtype=jnp.bfloat16, rngs=rngs)
-        self.k_proj = nnx.LinearGeneral(hidden_dim, (num_key_value_heads, head_dim), use_bias=False, dtype=jnp.bfloat16, rngs=rngs)
-        self.v_proj = nnx.LinearGeneral(hidden_dim, (num_key_value_heads, head_dim), use_bias=False, dtype=jnp.bfloat16, rngs=rngs)
-        self.o_proj = nnx.LinearGeneral((num_attention_heads, head_dim), hidden_dim, axis=(-2, -1), use_bias=False, dtype=jnp.bfloat16, rngs=rngs)
+        self.q_proj = nnx.LinearGeneral(hidden_dim, (num_attention_heads, head_dim), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
+        self.k_proj = nnx.LinearGeneral(hidden_dim, (num_key_value_heads, head_dim), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
+        self.v_proj = nnx.LinearGeneral(hidden_dim, (num_key_value_heads, head_dim), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
+        self.o_proj = nnx.LinearGeneral((num_attention_heads, head_dim), hidden_dim, axis=(-2, -1), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
 
     def __call__(self, x):
         q, k, v = self.q_proj(x), self.k_proj(x), self.v_proj(x)
@@ -32,10 +32,10 @@ class Attention(nnx.Module):
     
 
 class TransformerBlock(nnx.Module):
-    def __init__(self,hidden_dim, num_attention_heads, num_key_value_heads, head_dim, intermediate_dim, act_fn, rope_theta, rngs):
-        self.attention = Attention(hidden_dim, num_attention_heads, num_key_value_heads, head_dim, rope_theta, rngs)
+    def __init__(self,hidden_dim, num_attention_heads, num_key_value_heads, head_dim, intermediate_dim, act_fn, rope_theta, use_bias, rngs):
+        self.attention = Attention(hidden_dim, num_attention_heads, num_key_value_heads, head_dim, rope_theta, use_bias, rngs)
         self.norm_1 = nnx.RMSNorm(hidden_dim, rngs=rngs)
-        self.mlp = GLU(hidden_dim, intermediate_dim, act_fn, rngs)
+        self.mlp = GLU(hidden_dim, intermediate_dim, act_fn, use_bias, rngs)
         self.norm_2 = nnx.RMSNorm(hidden_dim, rngs=rngs)
 
     def __call__(self, x):
