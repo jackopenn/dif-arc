@@ -38,10 +38,10 @@ class Model(nnx.Module):
             )
             for _ in range(num_layers)
         ])
-        self.q_head_layer = nnx.Linear(hidden_dim, 1, rngs=rngs)
+        self.q_head_layer = nnx.Linear(hidden_dim, 1, use_bias=False, kernel_init=nnx.initializers.zeros, rngs=rngs)
     
     def input_embedding(self, x, aug_puzzle_idx):
-        return jnp.concatenate([self.puzzle_emb(aug_puzzle_idx), self.embed(x)], axis=1) # * jnp.sqrt(x.shape[-1])
+        return jnp.concatenate([self.puzzle_emb(aug_puzzle_idx), self.embed(x)], axis=1) * jnp.sqrt(x.shape[-1])
 
     def output_head(self, x):
         return self.unembed(x[:, 1:, :])

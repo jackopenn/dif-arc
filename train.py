@@ -14,6 +14,12 @@ from dataset import get_data_loader
 from modelling.model import Model
 from utils import MetricLogger
 
+# TODO: param the * sqrt(dim)
+# TODO: param use_bias
+# TODO: param q_head init
+# TODO: log epochs
+# TODO: move 1000 aug to cloud
+# TODO: add eval loop (match augs in eval set)
 def get_config():
     
     def get_puzzle_vocab_size(data_dir):
@@ -32,8 +38,7 @@ def get_config():
     cfg.model.act_fn = "swish"
     cfg.model.tie_embeddings = False
     cfg.model.rope_theta = 10000
-    # cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_diro)
-    cfg.model.puzzle_vocab_size = 800
+    cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
     
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 6
@@ -47,15 +52,15 @@ def get_config():
 
     # TODO: embeddings have diff lr
     cfg.schedule.init_value = 0
-    cfg.schedule.peak_value = 1e-4  
+    cfg.schedule.peak_value = 1e-4
     cfg.schedule.warmup_steps = 2000
 
     cfg.max_steps = 100_000
 
-    cfg.data.data_dir = "data/arc-aug-0"
-    cfg.data.batch_size = 256
+    cfg.data.data_dir = "data/arc-aug-10"
+    cfg.data.batch_size = 768
 
-    cfg.parallel.n_devices = 4
+    cfg.parallel.n_devices = 8
 
     return cfg
 
@@ -136,7 +141,8 @@ def main(cfg):
         """update the halt flag if step >= N_supervision or q_logits > 0"""
         step = carry.step + 1
         halted = jnp.where(step >= N_supervision, True, carry.halted)
-        # halted = jnp.where(q_logits.reshape(-1) > 0, True, halted)
+        if cfg.recursion.act:
+            halted = jnp.where(q_logits.reshape(-1) > 0, True, halted)
         return Carry(
             z=z,
             y=y,

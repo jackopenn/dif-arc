@@ -52,7 +52,7 @@ class Pad(grain.transforms.Map):
 
 def get_data_loader(data_dir, batch_size):
     data_source = JsonDataSource(data_dir)
-    sampler = grain.samplers.IndexSampler(len(data_source), seed=0)
+    sampler = grain.samplers.IndexSampler(len(data_source), seed=0, shuffle=True)
     operations = [
         Parse(),
         Pad(),
