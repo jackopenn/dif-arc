@@ -23,11 +23,11 @@ def get_config():
     cfg.seed = 69420
     
     cfg.model.vocab_size = 10 + 1 # +1 for padding
-    cfg.model.hidden_dim = 16
-    cfg.model.intermediate_dim = lambda: 1 * cfg.model.hidden_dim
-    cfg.model.num_layers = 1
-    cfg.model.num_attention_heads = 1
-    cfg.model.num_key_value_heads = 1
+    cfg.model.hidden_dim = 512
+    cfg.model.intermediate_dim = lambda: 4 * cfg.model.hidden_dim
+    cfg.model.num_layers = 2
+    cfg.model.num_attention_heads = 8
+    cfg.model.num_key_value_heads = 8
     cfg.model.head_dim = lambda: cfg.model.hidden_dim // cfg.model.num_attention_heads
     cfg.model.act_fn = "swish"
     cfg.model.tie_embeddings = False
@@ -35,8 +35,8 @@ def get_config():
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
     
     cfg.recursion.N_supervision = 16
-    cfg.recursion.n = 1
-    cfg.recursion.T = 1
+    cfg.recursion.n = 6
+    cfg.recursion.T = 3
     
     cfg.optim.weight_decay = 0.1
     cfg.optim.b1 = 0.9
@@ -46,9 +46,9 @@ def get_config():
     # TODO: embeddings have diff lr
     cfg.schedule.init_value = 0
     cfg.schedule.peak_value = 1e-4  
-    cfg.schedule.warmup_steps = 100
+    cfg.schedule.warmup_steps = 2000
 
-    cfg.max_steps = 100000
+    cfg.max_steps = 100_000
 
     cfg.data.data_dir = "data/arc-aug-10"
     cfg.data.batch_size = 4
