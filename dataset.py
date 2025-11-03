@@ -3,8 +3,7 @@ import json
 from functools import partial
 
 import grain
-import jax
-import jax.numpy as jnp
+import numpy as np
 from tqdm import tqdm
 
 
@@ -22,12 +21,12 @@ class JsonDataSource(grain.sources.RandomAccessDataSource):
 class Parse(grain.transforms.Map):
     def map(self, record):
         return {
-            "x": jnp.asarray(record["x"]),
-            "y": jnp.asarray(record["y"]),
-            "colour_aug": jnp.asarray(record["colour_aug"]),
-            "d8_aug": jnp.asarray([record["d8_aug"]]),
-            "example_idx": jnp.asarray([record["example_idx"]]),
-            "aug_puzzle_idx": jnp.asarray([record["aug_puzzle_idx"]]),
+            "x": np.asarray(record["x"]),
+            "y": np.asarray(record["y"]),
+            "colour_aug": np.asarray(record["colour_aug"]),
+            "d8_aug": np.asarray([record["d8_aug"]]),
+            "example_idx": np.asarray([record["example_idx"]]),
+            "aug_puzzle_idx": np.asarray([record["aug_puzzle_idx"]]),
         }
 
         
@@ -36,7 +35,7 @@ class Pad(grain.transforms.Map):
         self.max_grid_size = max_grid_size
         
     def _pad(self, x):
-        return jnp.pad(
+        return np.pad(
             x,
             pad_width=((0, self.max_grid_size - x.shape[0]), (0, self.max_grid_size - x.shape[1])),
             mode="constant",

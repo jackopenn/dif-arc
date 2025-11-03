@@ -32,7 +32,8 @@ def get_config():
     cfg.model.act_fn = "swish"
     cfg.model.tie_embeddings = False
     cfg.model.rope_theta = 10000
-    cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
+    # cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_diro)
+    cfg.model.puzzle_vocab_size = 800
     
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 6
@@ -50,8 +51,8 @@ def get_config():
 
     cfg.max_steps = 100_000
 
-    cfg.data.data_dir = "data/arc-aug-10"
-    cfg.data.batch_size = 768
+    cfg.data.data_dir = "data/arc-aug-0"
+    cfg.data.batch_size = 256
 
     cfg.parallel.n_devices = 4
 
@@ -100,9 +101,14 @@ def main(cfg):
     def init_carry(batch, z_init, y_init, hidden_dim):
         """initialize the carry with the initial data"""
         batch_size = batch['x'].shape[0]
+        z_init = jnp.broadcast_to(z_init, (batch_size, 901, hidden_dim))
+        y_init = jnp.broadcast_to(y_init, (batch_size, 901, hidden_dim))
+        if cfg.parallel.n_devices > 1:
+            z_init = jax.device_put(z_init, NamedSharding(mesh, P("data", None, None)))
+            y_init = jax.device_put(y_init, NamedSharding(mesh, P("data", None, None)))
         return Carry(
-            z=jnp.broadcast_to(z_init, (batch_size, 901, hidden_dim)), # (batch_size, 901, hidden_dim)
-            y=jnp.broadcast_to(y_init, (batch_size, 901, hidden_dim)), # (batch_size, 901, hidden_dim)
+            z=z_init, # (batch_size, 901, hidden_dim)
+            y=y_init, # (batch_size, 901, hidden_dim)
             x_input=batch['x'],                                        # (batch_size, 900)
             aug_puzzle_idx=batch['aug_puzzle_idx'],                    # (batch_size,)
             y_true=batch['y'],                                         # (batch_size, 900)
@@ -126,7 +132,7 @@ def main(cfg):
         """update the halt flag if step >= N_supervision or q_logits > 0"""
         step = carry.step + 1
         halted = jnp.where(step >= N_supervision, True, carry.halted)
-        halted = jnp.where(q_logits.reshape(-1) > 0, True, halted)
+        # halted = jnp.where(q_logits.reshape(-1) > 0, True, halted)
         return Carry(
             z=z,
             y=y,
@@ -154,10 +160,11 @@ def main(cfg):
             y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float32),
             y_true.reshape(-1)
         ).mean(where=y_true.reshape(-1) < 10)
-        q_loss = optax.sigmoid_binary_cross_entropy(
-            q_logits,
-            (jnp.argmax(y_logits, axis=-1) == y_true)
-        ).mean()
+        # q_loss = optax.sigmoid_binary_cross_entropy(
+        #     q_logits,
+        #     (jnp.argmax(y_logits, axis=-1) == y_true)
+        # ).mean()
+        q_loss = 0
         loss = y_loss + q_loss
         return loss, (y, z, y_loss, q_loss, y_logits, q_logits)
     
@@ -179,6 +186,9 @@ def main(cfg):
         )
         optimizer.update(model, grads)
 
+        # update halt flag
+        carry = post_update_carry(carry, q_logits, z, y, N_supervision)
+
         # compute metrics (10 = padding)
         cell_correct = jnp.argmax(y_logits, axis=-1) == carry.y_true
         puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 10)
@@ -196,11 +206,11 @@ def main(cfg):
             "z_max": jnp.max(jnp.abs(z)),
             "y_norm": jnp.sqrt(jnp.mean(y**2)),
             "z_norm": jnp.sqrt(jnp.mean(z**2)),
+            # "n_supervision_steps": carry.step.mean(where=carry.halted),
             "n_supervision_steps": carry.step.mean(),
+
         }
 
-        # update halt flag
-        carry = post_update_carry(carry, q_logits, z, y, N_supervision)
         return carry, metrics, q_logits
     
     # init logging 
@@ -212,22 +222,30 @@ def main(cfg):
     initializer = jax.nn.initializers.truncated_normal(stddev=1.0)
     y_init = initializer(y_key, (cfg.model.hidden_dim,), jnp.bfloat16)
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
-    y_init, z_init = shard_data(y_init), shard_data(z_init)
 
     # init data loader
     train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.batch_size)
     train_iter = (shard_data(batch) for batch in train_data_loader)
+
+    # init profiler
+    profiler_options = jax.profiler.ProfileOptions()
+    profiler_options.host_tracer_level = 3
+    trace_dir = "profile"
 
     t0 = time.time()
     for step, batch in enumerate(train_iter):
         batch = shard_data(batch)
         if step == 0:
             carry = init_carry(batch, z_init, y_init, cfg.model.hidden_dim)
-        carry, metrics, q_logits = train_step(
-            model, optimizer, carry, batch, y_init, z_init,
-            cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T
-        )
-        # print(carry.step, carry.halted, q_logits.reshape(4))
+        if step == 10: 
+            jax.profiler.start_trace(trace_dir, profiler_options=profiler_options)
+        with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
+            carry, metrics, q_logits = train_step(
+                model, optimizer, carry, batch, y_init, z_init,
+                cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T
+            )
+        if step == 15:
+            jax.profiler.stop_trace()
         step_time = time.time() - t0
         train_logger.log({**metrics, "step_time": step_time})
         t0 = time.time()
