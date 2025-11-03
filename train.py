@@ -97,21 +97,21 @@ def main(cfg):
         step: jax.Array
         halted: jax.Array
     
-    def init_carry(batch, z_init, y_init):
+    def init_carry(batch, z_init, y_init, hidden_dim):
         """initialize the carry with the initial data"""
         batch_size = batch['x'].shape[0]
         return Carry(
-            z=jnp.repeat(z_init[jnp.newaxis, jnp.newaxis, ...], batch_size, axis=0), # (batch_size, 900, hidden_dim)
-            y=jnp.repeat(y_init[jnp.newaxis, jnp.newaxis, ...], batch_size, axis=0), # (batch_size, 900, hidden_dim)
-            x_input=batch['x'],                                                      # (batch_size, 900)
-            aug_puzzle_idx=batch['aug_puzzle_idx'],                                  # (batch_size,)
-            y_true=batch['y'],                                                       # (batch_size, 900)
-            step=jnp.zeros((batch_size, ), dtype=jnp.int32),                         # (batch_size,)
-            halted=jnp.zeros((batch_size, ), dtype=jnp.bool_),                       # (batch_size,)
+            z=jnp.broadcast_to(z_init, (batch_size, 901, hidden_dim)), # (batch_size, 900, hidden_dim)
+            y=jnp.broadcast_to(y_init, (batch_size, 901, hidden_dim)), # (batch_size, 900, hidden_dim)
+            x_input=batch['x'],                                        # (batch_size, 900)
+            aug_puzzle_idx=batch['aug_puzzle_idx'],                    # (batch_size,)
+            y_true=batch['y'],                                         # (batch_size, 900)
+            step=jnp.zeros((batch_size, ), dtype=jnp.int32),           # (batch_size,)
+            halted=jnp.zeros((batch_size, ), dtype=jnp.bool_),         # (batch_size,)
         )
     
     def pre_update_carry(carry, batch, z_init, y_init):
-        """update the carry with new data (if halted)"""
+        """update the carry with new data from batch (if halted)"""
         return Carry(
             z=jnp.where(carry.halted[..., jnp.newaxis, jnp.newaxis], z_init[jnp.newaxis, jnp.newaxis, ...], carry.z),
             y=jnp.where(carry.halted[..., jnp.newaxis, jnp.newaxis], y_init[jnp.newaxis, jnp.newaxis, ...], carry.y),
@@ -122,8 +122,8 @@ def main(cfg):
             halted=jnp.where(carry.halted, False, carry.halted),
         )
     
-    def post_update_carry(carry, q_logits, z, y,N_supervision):
-        """ update the halt flag based on the number of steps and the q_logits"""
+    def post_update_carry(carry, q_logits, z, y, N_supervision):
+        """update the halt flag if step >= N_supervision or q_logits > 0"""
         step = carry.step + 1
         halted = jnp.where(step >= N_supervision, True, carry.halted)
         halted = jnp.where(q_logits.reshape(-1) > 0, True, halted)
@@ -219,7 +219,7 @@ def main(cfg):
     for step, batch in enumerate(train_iter):
         batch = shard_data(batch)
         if step == 0:
-            carry = init_carry(batch, z_init, y_init)
+            carry = init_carry(batch, z_init, y_init, cfg.model.hidden_dim)
         carry, metrics, q_logits = train_step(
             model, optimizer, carry, batch, y_init, z_init,
             cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T

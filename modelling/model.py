@@ -49,13 +49,8 @@ class Model(nnx.Module):
     def q_head(self, x):
         return self.q_head_layer(x[:, 0, :])
 
-    def _maybe_expand(self, x):
-        if x.ndim == 2:
-            x = jnp.expand_dims(x, axis=1)
-        return x
-
     def __call__(self, *x):
-        x = map(self._maybe_expand, x)
+        # x = map(self._maybe_expand, x)
         x = reduce(jnp.add, x)
         for layer in self.layers:
             x = layer(x)
