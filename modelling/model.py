@@ -50,7 +50,6 @@ class Model(nnx.Module):
         return self.q_head_layer(x[:, 0, :])
 
     def __call__(self, *x):
-        # x = map(self._maybe_expand, x)
         x = reduce(jnp.add, x)
         for layer in self.layers:
             x = layer(x)
