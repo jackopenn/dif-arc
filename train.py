@@ -101,8 +101,8 @@ def main(cfg):
         """initialize the carry with the initial data"""
         batch_size = batch['x'].shape[0]
         return Carry(
-            z=jnp.broadcast_to(z_init, (batch_size, 901, hidden_dim)), # (batch_size, 900, hidden_dim)
-            y=jnp.broadcast_to(y_init, (batch_size, 901, hidden_dim)), # (batch_size, 900, hidden_dim)
+            z=jnp.broadcast_to(z_init, (batch_size, 901, hidden_dim)), # (batch_size, 901, hidden_dim)
+            y=jnp.broadcast_to(y_init, (batch_size, 901, hidden_dim)), # (batch_size, 901, hidden_dim)
             x_input=batch['x'],                                        # (batch_size, 900)
             aug_puzzle_idx=batch['aug_puzzle_idx'],                    # (batch_size,)
             y_true=batch['y'],                                         # (batch_size, 900)
@@ -180,15 +180,18 @@ def main(cfg):
         optimizer.update(model, grads)
 
         # compute metrics (10 = padding)
-        correct = jnp.argmax(y_logits, axis=-1) == carry.y_true
-        cell_acc = correct.mean(where=carry.y_true < 10)
-        puzzle_acc = correct.all(axis=-1, where=carry.y_true < 10).mean()
+        cell_correct = jnp.argmax(y_logits, axis=-1) == carry.y_true
+        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 10)
+        cell_acc = cell_correct.mean(where=carry.y_true < 10)
+        puzzle_acc = puzzle_correct.mean()
+        q_acc = ((q_logits.reshape(-1) > 0) == puzzle_correct).mean()
         metrics = {
             "loss": loss,
             "y_loss": y_loss,
             "q_loss": q_loss,
             "cell_acc": cell_acc,
             "puzzle_acc": puzzle_acc,
+            "q_acc": q_acc,
             "y_max": jnp.max(jnp.abs(y)),
             "z_max": jnp.max(jnp.abs(z)),
             "y_norm": jnp.sqrt(jnp.mean(y**2)),
