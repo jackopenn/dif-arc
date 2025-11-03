@@ -2,3 +2,6 @@ __pycache__/
 uv.lock
 .venv/
 wandb/
+data/
+!data/training/
+!data/evaluation/

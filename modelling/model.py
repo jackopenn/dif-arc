@@ -1,9 +1,10 @@
 from functools import reduce, partial
-import jax
-import jax.numpy as jnp
-from flax import nnx
 
+import jax
+from jax import numpy as jnp
+from flax import nnx
 from modelling.layers import TransformerBlock
+
 
 class Model(nnx.Module):
     def __init__(
@@ -37,7 +38,7 @@ class Model(nnx.Module):
             )
             for _ in range(num_layers)
         ])
-        self.q_head = nnx.Linear(hidden_dim, 1, rngs=rngs)
+        self.q_head_layer = nnx.Linear(hidden_dim, 1, rngs=rngs)
     
     def input_embedding(self, x, aug_puzzle_idx):
         return jnp.concatenate([self.puzzle_emb(aug_puzzle_idx), self.embed(x)], axis=1) # * jnp.sqrt(x.shape[-1])
@@ -45,10 +46,16 @@ class Model(nnx.Module):
     def output_head(self, x):
         return self.unembed(x[:, 1:, :])
 
-    def Q_head(self, x):
-        return self.q_head(x[:, 0, :])
+    def q_head(self, x):
+        return self.q_head_layer(x[:, 0, :])
+
+    def _maybe_expand(self, x):
+        if x.ndim == 2:
+            x = jnp.expand_dims(x, axis=1)
+        return x
 
     def __call__(self, *x):
+        x = map(self._maybe_expand, x)
         x = reduce(jnp.add, x)
         for layer in self.layers:
             x = layer(x)
