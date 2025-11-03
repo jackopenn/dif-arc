@@ -38,6 +38,7 @@ def get_config():
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 6
     cfg.recursion.T = 3
+    cfg.recursion.act = True
     
     cfg.optim.weight_decay = 0.1
     cfg.optim.b1 = 0.9
@@ -160,11 +161,13 @@ def main(cfg):
             y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float32),
             y_true.reshape(-1)
         ).mean(where=y_true.reshape(-1) < 10)
-        # q_loss = optax.sigmoid_binary_cross_entropy(
-        #     q_logits,
-        #     (jnp.argmax(y_logits, axis=-1) == y_true)
-        # ).mean()
-        q_loss = 0
+        if cfg.recursion.act:
+            q_loss = optax.sigmoid_binary_cross_entropy(
+                q_logits,
+                (jnp.argmax(y_logits, axis=-1) == y_true)
+            ).mean()
+        else:
+            q_loss = 0
         loss = y_loss + q_loss
         return loss, (y, z, y_loss, q_loss, y_logits, q_logits)
     
@@ -194,24 +197,24 @@ def main(cfg):
         puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 10)
         cell_acc = cell_correct.mean(where=carry.y_true < 10)
         puzzle_acc = puzzle_correct.mean()
-        q_acc = ((q_logits.reshape(-1) > 0) == puzzle_correct).mean()
         metrics = {
             "loss": loss,
             "y_loss": y_loss,
             "q_loss": q_loss,
             "cell_acc": cell_acc,
             "puzzle_acc": puzzle_acc,
-            "q_acc": q_acc,
             "y_max": jnp.max(jnp.abs(y)),
             "z_max": jnp.max(jnp.abs(z)),
             "y_norm": jnp.sqrt(jnp.mean(y**2)),
             "z_norm": jnp.sqrt(jnp.mean(z**2)),
-            # "n_supervision_steps": carry.step.mean(where=carry.halted),
-            "n_supervision_steps": carry.step.mean(),
-
+            "n_supervision_steps": carry.step.mean(where=carry.halted),
         }
+        if cfg.recursion.act:
+            q_acc = ((q_logits.reshape(-1) > 0) == puzzle_correct).mean()
+            metrics["q_acc"] = q_acc
+            metrics["n_supervision_steps"] = carry.step.mean()
 
-        return carry, metrics, q_logits
+        return carry, metrics
     
     # init logging 
     wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
@@ -240,7 +243,7 @@ def main(cfg):
         if step == 10: 
             jax.profiler.start_trace(trace_dir, profiler_options=profiler_options)
         with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
-            carry, metrics, q_logits = train_step(
+            carry, metrics = train_step(
                 model, optimizer, carry, batch, y_init, z_init,
                 cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T
             )
