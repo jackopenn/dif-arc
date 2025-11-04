@@ -79,7 +79,7 @@ def main(cfg):
         jax.set_mesh(mesh)
 
         repl_sharding = NamedSharding(mesh, P())
-        data_sharding = NamedSharding(mesh, P("data", None))
+        data_sharding = NamedSharding(mesh, P("data",))
 
         _, model_state = nnx.split(model)
         sharded_model_state = jax.lax.with_sharding_constraint(model_state, repl_sharding)
@@ -109,8 +109,8 @@ def main(cfg):
         z_init = jnp.broadcast_to(z_init, (batch_size, 901, hidden_dim))
         y_init = jnp.broadcast_to(y_init, (batch_size, 901, hidden_dim))
         if cfg.parallel.n_devices > 1:
-            z_init = jax.device_put(z_init, NamedSharding(mesh, P("data", None, None)))
-            y_init = jax.device_put(y_init, NamedSharding(mesh, P("data", None, None)))
+            z_init = jax.device_put(z_init, data_sharding)
+            y_init = jax.device_put(y_init, data_sharding)
         return Carry(
             z=z_init,                                         # (batch_size, 901, hidden_dim)
             y=y_init,                                         # (batch_size, 901, hidden_dim)
