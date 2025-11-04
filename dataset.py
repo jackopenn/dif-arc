@@ -56,6 +56,6 @@ def get_data_loader(data_dir, batch_size):
     operations = [
         Parse(),
         Pad(),
-        grain.transforms.Batch(batch_size=batch_size)
+        grain.transforms.Batch(batch_size=batch_size, drop_remainder=True)
     ]
     return grain.DataLoader(data_source=data_source, operations=operations, sampler=sampler)
