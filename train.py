@@ -177,21 +177,22 @@ def main(cfg):
             "z_max": jnp.max(jnp.abs(z)),
             "y_norm": jnp.sqrt(jnp.mean(y**2)),
             "z_norm": jnp.sqrt(jnp.mean(z**2)),
-            "n_supervision_steps": carry.step.mean(where=carry.halted),
+            "n_supervision_steps": carry.step.mean(),
         }
         if cfg.recursion.act:
             q_acc = ((q_logits.reshape(-1) > 0) == puzzle_correct).mean()
             metrics["q_acc"] = q_acc
-            metrics["n_supervision_steps"] = carry.step.mean()
+            metrics["n_supervision_steps"] = carry.step.mean(where=carry.halted)
 
         return carry, metrics
     
     # init logging 
-    if cfg.wandb:
-        wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
-    else:
-        wandb = None
-    train_logger = MetricLogger(batch_size=cfg.data.batch_size, wandb=wandb)
+    # if cfg.wandb:
+    #     wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
+    # else:
+    #     wandb = None
+    wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
+    train_logger = MetricLogger(cfg.data.batch_size, wandb)
 
     # init latents
     y_key, z_key = jax.random.split(key, 2)
