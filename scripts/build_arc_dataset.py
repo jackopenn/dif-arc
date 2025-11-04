@@ -193,9 +193,11 @@ def main(cfg):
             "num_aug_examples": n_test_aug_examples,
         }
     }
+    print("writing metadata ...")
     with open(f"{cfg.output_dir}/metadata.json", 'w') as file:
         json.dump(metadata, file)
 
+    print("done (sometimes python doesn't exit, but it's done)")
 
 if __name__ == "__main__":
     run(main)
