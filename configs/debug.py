@@ -34,7 +34,6 @@ def get_config():
     cfg.optim.b2 = 0.95
 
 
-    # TODO: embeddings have diff lr
     cfg.schedule.init_value = 0
     cfg.schedule.peak_value = 1e-4
     cfg.schedule.warmup_steps = 2000

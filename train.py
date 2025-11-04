@@ -17,52 +17,6 @@ from utils import MetricLogger
 # TODO: log epochs
 # TODO: add eval loop (match augs in eval set)
 
-def get_config():
-    
-    def get_puzzle_vocab_size(data_dir):
-        return json.load(open(os.path.join(data_dir, "metadata.json"), 'r'))['train']['num_aug_puzzles']
-    
-    cfg = Config()
-    cfg.seed = 69420
-    
-    cfg.model.vocab_size = 10 + 1 # +1 for padding
-    cfg.model.hidden_dim = 512
-    cfg.model.intermediate_dim = lambda: 4 * cfg.model.hidden_dim
-    cfg.model.num_layers = 2
-    cfg.model.num_attention_heads = 8
-    cfg.model.num_key_value_heads = 8
-    cfg.model.head_dim = lambda: cfg.model.hidden_dim // cfg.model.num_attention_heads
-    cfg.model.act_fn = "swish"
-    cfg.model.tie_embeddings = False
-    cfg.model.use_bias = False
-    cfg.model.rope_theta = 10000
-    cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
-    
-    cfg.recursion.N_supervision = 16
-    cfg.recursion.n = 6
-    cfg.recursion.T = 3
-    cfg.recursion.act = True
-    
-    cfg.optim.weight_decay = 0.1
-    cfg.optim.b1 = 0.9
-    cfg.optim.b2 = 0.95
-
-
-    # TODO: embeddings have diff lr
-    cfg.schedule.init_value = 0
-    cfg.schedule.peak_value = 1e-4
-    cfg.schedule.warmup_steps = 2000
-
-    cfg.max_steps = 100_000
-
-    cfg.data.data_dir = "data/arc-aug-10"
-    cfg.data.batch_size = 768
-
-    cfg.parallel.n_devices = 8
-
-    return cfg
-
-
 def main(cfg):
     key = jax.random.key(cfg.seed)
     
