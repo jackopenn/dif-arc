@@ -15,7 +15,6 @@ from modelling.model import Model
 from utils import MetricLogger
 
 # TODO: log epochs
-# TODO: move 1000 aug to cloud
 # TODO: add eval loop (match augs in eval set)
 
 def get_config():
