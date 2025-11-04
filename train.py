@@ -21,11 +21,19 @@ def main(cfg):
     key = jax.random.key(cfg.seed)
     
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
-    optimizer = nnx.Optimizer(
-        model,
-        optax.adamw(optax.warmup_constant_schedule(**cfg.schedule.to_dict()), **cfg.optim.to_dict()),
-        wrt=nnx.Param,
+    # TODO: need to check this works
+    tx = optax.partition(
+        {
+            "embed": optax.adamw(
+                optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()),**cfg.optim.to_dict()
+            ),
+            "other": optax.adamw(
+                optax.warmup_constant_schedule(**cfg.other_schedule.to_dict()), **cfg.optim.to_dict()
+            )
+        },
+        lambda state: jax.tree.map_with_path(lambda path, _: "embed" if path[0].key == "embed" else "other", state)
     )
+    optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
 
     shard_data = lambda data: data
     if cfg.parallel.n_devices > 1:
