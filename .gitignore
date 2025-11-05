@@ -6,3 +6,4 @@ wandb/
 !data/arc-agi-2/
 data/
 profile/
+.DS_Store
