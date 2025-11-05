@@ -126,6 +126,7 @@ def main(cfg):
         x = model.input_embedding(x_input, aug_puzzle_idx)
         y, z = latent_recursion(model, x, y, z, n)
         y_logits, q_logits = model.output_head(y), model.q_head(z)
+        y_preds = jnp.argmax(y_logits, axis=-1)
         # compute losses
         y_loss = optax.softmax_cross_entropy_with_integer_labels(
             y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float32),
@@ -133,13 +134,13 @@ def main(cfg):
         ).mean(where=y_true.reshape(-1) < 10)
         if cfg.recursion.act:
             q_loss = optax.sigmoid_binary_cross_entropy(
-                q_logits,
-                (jnp.argmax(y_logits, axis=-1) == y_true)
+                q_logits.reshape(-1),
+                (y_preds == y_true).all(axis=-1, where=y_true < 10)
             ).mean()
         else:
             q_loss = 0
         loss = y_loss + q_loss
-        return loss, (y, z, y_loss, q_loss, y_logits, q_logits)
+        return loss, (y, z, y_loss, q_loss, y_preds, q_logits)
     
     
     @nnx.jit(static_argnames=["N_supervision", "n", "T"])
@@ -154,7 +155,7 @@ def main(cfg):
             y, z = latent_recursion(model, x, y, z, n)
         # 1-step approx BPTT
         grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
-        (loss, (y, z, y_loss, q_loss, y_logits, q_logits)), grads = grad_fn(
+        (loss, (y, z, y_loss, q_loss, y_preds, q_logits)), grads = grad_fn(
             model, carry.x_input, carry.aug_puzzle_idx, y, z, carry.y_true, n
         )
         optimizer.update(model, grads)
@@ -163,7 +164,7 @@ def main(cfg):
         carry = post_update_carry(carry, q_logits, z, y, N_supervision)
 
         # compute metrics (10 = padding)
-        cell_correct = jnp.argmax(y_logits, axis=-1) == carry.y_true
+        cell_correct = y_preds == carry.y_true
         puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 10)
         cell_acc = cell_correct.mean(where=carry.y_true < 10)
         puzzle_acc = puzzle_correct.mean()
@@ -187,12 +188,11 @@ def main(cfg):
         return carry, metrics
     
     # init logging 
-    # if cfg.wandb:
-    #     wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
-    # else:
-    #     wandb = None
-    wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
-    train_logger = MetricLogger(cfg.data.batch_size, wandb)
+    if cfg.wandb:
+        wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
+        train_logger = MetricLogger(cfg.data.batch_size, wandb)
+    else:
+        train_logger = MetricLogger(cfg.data.batch_size, None)
 
     # init latents
     y_key, z_key = jax.random.split(key, 2)
