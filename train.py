@@ -149,7 +149,7 @@ def main(cfg):
             ).mean()
         else:
             q_loss = 0
-        loss = y_loss + q_loss
+        loss = y_loss + 0.5*q_loss
         return loss, (y, z, y_loss, q_loss, y_preds, q_logits)
     
     
@@ -174,10 +174,10 @@ def main(cfg):
         carry = post_update_carry(carry, q_logits, z, y, N_supervision)
 
         # compute metrics (10 = padding)
-        cell_correct = y_preds == carry.y_true
+        cell_correct = y_preds == carry.y_true # (batch_size, 900)
         puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 10)
-        cell_acc = cell_correct.mean(where=carry.y_true < 10)
-        puzzle_acc = puzzle_correct.mean()
+        cell_acc = cell_correct.mean(where=(carry.y_true < 10) & (carry.halted[..., jnp.newaxis]))
+        puzzle_acc = puzzle_correct.mean(where=carry.halted)
         metrics = {
             "loss": loss,
             "y_loss": y_loss,
@@ -188,12 +188,11 @@ def main(cfg):
             "z_max": jnp.max(jnp.abs(z)),
             "y_norm": jnp.sqrt(jnp.mean(y**2)),
             "z_norm": jnp.sqrt(jnp.mean(z**2)),
-            "n_supervision_steps": carry.step.mean(),
+            "n_supervision_steps": carry.step.mean(where=carry.halted),
         }
         if cfg.recursion.act:
-            q_acc = ((q_logits.reshape(-1) > 0) == puzzle_correct).mean()
+            q_acc = ((q_logits.reshape(-1) > 0) == puzzle_correct).mean(where=carry.halted)
             metrics["q_acc"] = q_acc
-            metrics["n_supervision_steps"] = carry.step.mean(where=carry.halted)
 
         return carry, metrics
     
