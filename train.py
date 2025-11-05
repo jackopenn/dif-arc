@@ -97,12 +97,16 @@ def main(cfg):
         )
     
 
-    def post_update_carry(carry, q_logits, z, y, N_supervision):
+    def post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, key):
         """update the halt flag if step >= N_supervision or q_logits > 0"""
         step = carry.step + 1
         halted = jnp.where(step >= N_supervision, True, carry.halted)
         if cfg.recursion.act:
             halted = jnp.where(q_logits.reshape(-1) > 0, True, halted)
+        if halt_explore_prob > 0:
+            key, subkey, subkey2 = jax.random.split(key, 3)
+            min_halt_steps = (jax.random.uniform(subkey, halted.shape) < halt_explore_prob) * jax.random.randint(subkey2, step.shape, minval=2, maxval=N_supervision + 1)
+            halted = halted & (step >= min_halt_steps)
         return Carry(
             z=z,
             y=y,
@@ -111,7 +115,7 @@ def main(cfg):
             y_true=carry.y_true,
             step=step,
             halted=halted,
-        )
+        ), key
 
     def stable_max_with_integer_labels(logits, labels, axis=-1):
         # s_logits = jnp.where(logits >= 0.0, logits + 1.0, jnp.reciprocal(1.0 - logits + 1e-30))
@@ -154,8 +158,8 @@ def main(cfg):
         return loss, (y, z, y_loss, q_loss, y_preds, q_logits)
     
     
-    @nnx.jit(static_argnames=["N_supervision", "n", "T"])
-    def train_step(model, optimizer, carry, batch, y_init, z_init, N_supervision, n, T):
+    @nnx.jit(static_argnames=["N_supervision", "n", "T", "halt_explore_prob"])
+    def train_step(model, optimizer, carry, batch, y_init, z_init, N_supervision, n, T, halt_explore_prob, key):
         # update carry (if halted, update with init and batch)
         carry = pre_update_carry(carry, batch, z_init, y_init)
         # 1 N_supervision step
@@ -172,7 +176,7 @@ def main(cfg):
         optimizer.update(model, grads)
 
         # update halt flag
-        carry = post_update_carry(carry, q_logits, z, y, N_supervision)
+        carry, key = post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, key)
 
         # compute metrics (10 = padding)
         cell_correct = y_preds == carry.y_true # (batch_size, 900)
@@ -195,7 +199,7 @@ def main(cfg):
             q_acc = ((q_logits.reshape(-1) > 0) == puzzle_correct).mean(where=carry.halted)
             metrics["q_acc"] = q_acc
 
-        return carry, metrics
+        return carry, metrics, key
     
     # init logging 
     if cfg.wandb:
@@ -205,7 +209,7 @@ def main(cfg):
         train_logger = MetricLogger(cfg.data.batch_size, None)
 
     # init latents
-    y_key, z_key = jax.random.split(key, 2)
+    key, y_key, z_key = jax.random.split(key, 3)
     initializer = jax.nn.initializers.truncated_normal(stddev=1.0)
     y_init = initializer(y_key, (cfg.model.hidden_dim,), jnp.bfloat16)
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
@@ -227,9 +231,10 @@ def main(cfg):
         if step == 10: 
             jax.profiler.start_trace(trace_dir, profiler_options=profiler_options)
         with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
-            carry, metrics = train_step(
+            carry, metrics, key = train_step(
                 model, optimizer, carry, batch, y_init, z_init,
-                cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T
+                cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
+                cfg.recursion.halt_explore_prob, key
             )
         if step == 15:
             jax.profiler.stop_trace()
