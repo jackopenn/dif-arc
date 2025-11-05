@@ -23,8 +23,8 @@ class Model(nnx.Module):
         use_bias,
         rngs
     ):
-        self.puzzle_emb = nnx.Embed(puzzle_vocab_size, hidden_dim, dtype=jnp.bfloat16, rngs=rngs)
-        self.embed = nnx.Embed(vocab_size, hidden_dim, dtype=jnp.bfloat16, rngs=rngs)
+        self.puzzle_emb = nnx.Embed(puzzle_vocab_size, hidden_dim, dtype=jnp.bfloat16, kernel_init=nnx.initializers.truncated_normal(stddev=0), rngs=rngs)
+        self.embed = nnx.Embed(vocab_size, hidden_dim, dtype=jnp.bfloat16, kernel_init=nnx.initializers.truncated_normal(stddev=jnp.reciprocal(jnp.sqrt(hidden_dim))), rngs=rngs)
         self.unembed = self.embed.attend if tie_embeddings else nnx.Linear(hidden_dim, vocab_size, dtype=jnp.bfloat16, rngs=rngs)
         self.layers = nnx.List([
             TransformerBlock(

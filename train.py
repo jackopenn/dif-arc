@@ -133,6 +133,7 @@ def main(cfg):
             y_true.reshape(-1)
         ).mean(where=y_true.reshape(-1) < 10)
         if cfg.recursion.act:
+            # TODO: only compute for halted ?
             q_loss = optax.sigmoid_binary_cross_entropy(
                 q_logits.reshape(-1),
                 (y_preds == y_true).all(axis=-1, where=y_true < 10)
