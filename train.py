@@ -154,7 +154,7 @@ def main(cfg):
         return loss, (y, z, y_loss, q_loss, y_preds, q_logits)
     
     
-    # @nnx.jit(static_argnames=["N_supervision", "n", "T"])
+    @nnx.jit(static_argnames=["N_supervision", "n", "T"])
     def train_step(model, optimizer, carry, batch, y_init, z_init, N_supervision, n, T):
         # update carry (if halted, update with init and batch)
         carry = pre_update_carry(carry, batch, z_init, y_init)
