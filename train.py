@@ -118,7 +118,8 @@ def main(cfg):
         # log_probs = jnp.log(s_logits / (jnp.sum(s_logits, axis=axis, keepdims=True)))
         # log_probs_2 = jnp.take_along_axis(log_probs, jnp.expand_dims(labels, axis), axis=axis).squeeze(axis)
         # return -log_probs_2
-        s_logits = jnp.where(logits >= 0, jnp.log(logits + 1), -jnp.log(-logits + 1))
+        eps = 1e-10
+        s_logits = jnp.where(logits >= 0, jnp.log(logits + 1 + eps), -jnp.log(1 - logits + eps))
         return optax.softmax_cross_entropy_with_integer_labels(s_logits, labels, axis)
 
 
