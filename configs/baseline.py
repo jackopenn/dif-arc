@@ -28,6 +28,7 @@ def get_config():
     cfg.recursion.n = 6
     cfg.recursion.T = 3
     cfg.recursion.act = True
+    cfg.recursion.halt_explore_prob = 0.1
     
     cfg.optim.weight_decay = 0.1
     cfg.optim.b1 = 0.9
