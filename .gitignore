@@ -3,6 +3,6 @@ uv.lock
 .venv/
 wandb/
 data/
-!data/training/
-!data/evaluation/
+!data/arc-agi-1/
+!data/arc-agi-2/
 profile/
