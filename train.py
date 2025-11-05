@@ -113,14 +113,13 @@ def main(cfg):
             halted=halted,
         )
 
-    def stable_max_with_integer_labels(logits, labels, axis=-1):
-        # s_logits = jnp.where(logits >= 0.0, logits + 1.0, jnp.reciprocal(1.0 - logits + 1e-30))
-        # log_probs = jnp.log(s_logits / (jnp.sum(s_logits, axis=axis, keepdims=True)))
-        # log_probs_2 = jnp.take_along_axis(log_probs, jnp.expand_dims(labels, axis), axis=axis).squeeze(axis)
-        # return -log_probs_2
-        eps = 1e-10
-        s_logits = jnp.where(logits >= 0, jnp.log(logits + 1 + eps), -jnp.log(1 - logits + eps))
-        return optax.softmax_cross_entropy_with_integer_labels(s_logits, labels, axis)
+    
+    def stablemax_cross_entropy_with_integer_labels(logits, labels, eps=1e-10):
+        pos = jnp.log(jnp.maximum(logits, 0.) + 1.0 + eps)
+        neg = -jnp.log(jnp.maximum(1.0 - logits, eps))
+
+        s_logits = jnp.where(logits >= 0, pos, neg)
+        return optax.softmax_cross_entropy_with_integer_labels(s_logits, labels)
 
 
     def latent_recursion(model, x, y, z, n):
@@ -137,8 +136,7 @@ def main(cfg):
         y_logits, q_logits = model.output_head(y), model.q_head(z)
         y_preds = jnp.argmax(y_logits, axis=-1)
         # compute losses
-        # y_loss = optax.softmax_cross_entropy_with_integer_labels(
-        y_loss = stable_max_with_integer_labels(
+        y_loss = stablemax_cross_entropy_with_integer_labels(
             y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float32),
             y_true.reshape(-1)
         ).mean(where=y_true.reshape(-1) < 10)
@@ -154,7 +152,7 @@ def main(cfg):
         return loss, (y, z, y_loss, q_loss, y_preds, q_logits)
     
     
-    # @nnx.jit(static_argnames=["N_supervision", "n", "T"])
+    @nnx.jit(static_argnames=["N_supervision", "n", "T"])
     def train_step(model, optimizer, carry, batch, y_init, z_init, N_supervision, n, T):
         # update carry (if halted, update with init and batch)
         carry = pre_update_carry(carry, batch, z_init, y_init)
