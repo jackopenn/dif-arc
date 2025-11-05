@@ -12,11 +12,11 @@ from sws import Config, run
 def get_config():
     cfg = Config()
     cfg.input_dir = "data/arc-agi-1"
-    cfg.output_dir = lambda: f"data/arc-1-aug-{cfg.n_augs}"
+    cfg.output_dir = lambda: f"{cfg.input_dir}-aug-{cfg.n_augs}"
     cfg.subsets = ["training", "evaluation"]
     cfg.test_set = "evaluation"
     cfg.n_augs = 10
-    cfg.bg_cololour_aug = False # False: keep background black
+    cfg.bg_colour_aug = False # False: keep background black
     cfg.seed = 69420    
     return cfg
 
@@ -97,7 +97,7 @@ def main(cfg):
         while current_augs < cfg.n_augs:
             key, op_key, colour_key = jax.random.split(key, 3)
             op_idx = jax.random.randint(op_key, (), 0, 8).item()
-            if cfg.bg_cololour_aug:
+            if cfg.bg_colour_aug:
                 colours = jax.random.permutation(colour_key, jnp.arange(10))
             else:
                 # keep background black (0)
