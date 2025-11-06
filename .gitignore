@@ -2,7 +2,8 @@ __pycache__/
 uv.lock
 .venv/
 wandb/
+!data/arc-agi-1/
+!data/arc-agi-2/
 data/
-!data/training/
-!data/evaluation/
 profile/
+.DS_Store

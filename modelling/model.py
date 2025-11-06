@@ -21,11 +21,42 @@ class Model(nnx.Module):
         rope_theta,
         puzzle_vocab_size,
         use_bias,
+        puzzle_emb_len,
         rngs
     ):
-        self.puzzle_emb = nnx.Embed(puzzle_vocab_size, hidden_dim, dtype=jnp.bfloat16, rngs=rngs)
-        self.embed = nnx.Embed(vocab_size, hidden_dim, dtype=jnp.bfloat16, rngs=rngs)
-        self.unembed = self.embed.attend if tie_embeddings else nnx.Linear(hidden_dim, vocab_size, dtype=jnp.bfloat16, rngs=rngs)
+        self.puzzle_emb_len = puzzle_emb_len
+        if not rope_theta:
+            self.pos_embed = nnx.Embed(
+                9016,
+                hidden_dim,
+                dtype=jnp.bfloat16,
+                embedding_init=nnx.initializers.truncated_normal(
+                    stddev=jnp.reciprocal(jnp.sqrt(hidden_dim))
+                ),
+                rngs=rngs
+            )
+        else:
+            self.pos_embed = None
+        self.puzzle_emb = nnx.Embed(
+            puzzle_vocab_size,
+            hidden_dim,
+            dtype=jnp.bfloat16,
+            embedding_init=nnx.initializers.truncated_normal(stddev=0),
+            rngs=rngs
+        )
+        self.embed = nnx.Embed(
+            vocab_size,
+            hidden_dim,
+            dtype=jnp.bfloat16,
+            embedding_init=nnx.initializers.truncated_normal(
+                stddev=jnp.reciprocal(jnp.sqrt(hidden_dim))
+            ),
+            rngs=rngs)
+        self.unembed = (
+            self.embed.attend
+            if tie_embeddings
+            else nnx.Linear(hidden_dim, vocab_size, use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
+        )
         self.layers = nnx.List([
             TransformerBlock(
                 hidden_dim=hidden_dim,
@@ -40,14 +71,28 @@ class Model(nnx.Module):
             )
             for _ in range(num_layers)
         ])
-        self.q_head_layer = nnx.Linear(hidden_dim, 1, use_bias=use_bias, kernel_init=nnx.initializers.zeros, rngs=rngs)
+        self.q_head_layer = nnx.Linear(
+            hidden_dim,
+            1,
+            use_bias=True,
+            kernel_init=nnx.initializers.zeros,
+            bias_init=nnx.initializers.constant(-5),
+            rngs=rngs
+        )
     
     def input_embedding(self, x, aug_puzzle_idx):
-        embedding = jnp.concatenate([self.puzzle_emb(aug_puzzle_idx), self.embed(x)], axis=1)
+        puzzle_emb = self.puzzle_emb(aug_puzzle_idx) # [batch_size, 1, hidden_dim]
+        seq_emb = self.embed(x) # [batch_size, seq_len, hidden_dim]
+        if self.puzzle_emb_len > 1:
+            pad_len = self.puzzle_emb_len - 1
+            puzzle_emb = jnp.pad(puzzle_emb, ((0, 0), (0, pad_len), (0, 0)), mode='constant', constant_values=0) # [batch_size, puzzle_emb_len, hidden_dim]
+        embedding = jnp.concatenate([puzzle_emb, seq_emb], axis=1)
+        if self.pos_embed:
+            embedding = 0.707106781 * (embedding + self.pos_embed(jnp.arange(embedding.shape[1])))
         return jnp.sqrt(x.shape[-1]) * embedding
 
     def output_head(self, x):
-        return self.unembed(x[:, 1:, :])
+        return self.unembed(x[:, self.puzzle_emb_len:, :])
 
     def q_head(self, x):
         return self.q_head_layer(x[:, 0, :])

@@ -28,6 +28,7 @@ def get_config():
     cfg.recursion.n = 6
     cfg.recursion.T = 3
     cfg.recursion.act = True
+    cfg.recursion.halt_explore_prob = 0.1
     
     cfg.optim.weight_decay = 0.1
     cfg.optim.b1 = 0.9
@@ -46,7 +47,7 @@ def get_config():
 
     cfg.max_steps = 100_000
 
-    cfg.data.data_dir = "data/arc-aug-0"
+    cfg.data.data_dir = "data/arc-agi-2-aug-100"
     cfg.data.batch_size = 4
 
     cfg.parallel.n_devices = 1
