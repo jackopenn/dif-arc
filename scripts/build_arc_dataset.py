@@ -30,7 +30,7 @@ def d8_aug(puzzle_sample, op_idx):
         jnp.fliplr,
         jnp.flipud,
         jnp.transpose,
-        lambda x: jnp.transpose(jnp.rot90(x, k=1)),
+        lambda x: jnp.fliplr(jnp.rot90(x, k=1)),
     ]
     return ops[op_idx](puzzle_sample)
 
@@ -91,6 +91,9 @@ def main(cfg):
         base["colour_aug"] = jnp.arange(10)
         aug_puzzles.append(base)
         puzzle_metas = {(base['puzzle_id'], base['d8_aug'], str(base["colour_aug"]))}
+
+        # TODO: someimtes impossible to do all augs. some colours don't exist. will have duplidate augs
+        # check hash of puzzles instead
 
         # keep trying augs until unique n_augs
         current_augs = 0
