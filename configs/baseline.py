@@ -21,14 +21,15 @@ def get_config():
     cfg.model.act_fn = "swish"
     cfg.model.tie_embeddings = False
     cfg.model.use_bias = False
-    cfg.model.rope_theta = 10000
+    cfg.model.rope_theta = 10000 # none = learned
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
-    
+    cfg.model.puzzle_emb_len = 16
+
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 6
     cfg.recursion.T = 3
-    cfg.recursion.act = True
-    cfg.recursion.halt_explore_prob = 0.1
+    cfg.recursion.act = False
+    cfg.recursion.halt_explore_prob = 0.0
     
     cfg.optim.weight_decay = 0.1
     cfg.optim.b1 = 0.9

@@ -68,8 +68,8 @@ def main(cfg):
     def init_carry(batch, z_init, y_init, hidden_dim):
         """initialize the carry with the initial data"""
         batch_size = batch['x'].shape[0]
-        z_init = jnp.broadcast_to(z_init, (batch_size, 901, hidden_dim))
-        y_init = jnp.broadcast_to(y_init, (batch_size, 901, hidden_dim))
+        z_init = jnp.broadcast_to(z_init, (batch_size, 916, hidden_dim))
+        y_init = jnp.broadcast_to(y_init, (batch_size, 916, hidden_dim))
         if cfg.parallel.n_devices > 1:
             z_init = jax.device_put(z_init, data_sharding)
             y_init = jax.device_put(y_init, data_sharding)
