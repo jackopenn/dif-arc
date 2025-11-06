@@ -23,9 +23,26 @@ class Model(nnx.Module):
         use_bias,
         rngs
     ):
-        self.puzzle_emb = nnx.Embed(puzzle_vocab_size, hidden_dim, dtype=jnp.bfloat16, embedding_init=nnx.initializers.truncated_normal(stddev=0), rngs=rngs)
-        self.embed = nnx.Embed(vocab_size, hidden_dim, dtype=jnp.bfloat16, embedding_init=nnx.initializers.truncated_normal(stddev=jnp.reciprocal(jnp.sqrt(hidden_dim))), rngs=rngs)
-        self.unembed = self.embed.attend if tie_embeddings else nnx.Linear(hidden_dim, vocab_size, dtype=jnp.bfloat16, rngs=rngs)
+        self.puzzle_emb = nnx.Embed(
+            puzzle_vocab_size,
+            hidden_dim,
+            dtype=jnp.bfloat16,
+            embedding_init=nnx.initializers.truncated_normal(stddev=0),
+            rngs=rngs
+        )
+        self.embed = nnx.Embed(
+            vocab_size,
+            hidden_dim,
+            dtype=jnp.bfloat16,
+            embedding_init=nnx.initializers.truncated_normal(
+                stddev=jnp.reciprocal(jnp.sqrt(hidden_dim))
+            ),
+            rngs=rngs)
+        self.unembed = (
+            self.embed.attend
+            if tie_embeddings
+            else nnx.Linear(hidden_dim, vocab_size, use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
+        )
         self.layers = nnx.List([
             TransformerBlock(
                 hidden_dim=hidden_dim,
@@ -40,7 +57,14 @@ class Model(nnx.Module):
             )
             for _ in range(num_layers)
         ])
-        self.q_head_layer = nnx.Linear(hidden_dim, 1, use_bias=use_bias, kernel_init=nnx.initializers.zeros, rngs=rngs)
+        self.q_head_layer = nnx.Linear(
+            hidden_dim,
+            1,
+            use_bias=True,
+            kernel_init=nnx.initializers.zeros,
+            bias_init=nnx.initializers.constant(-5),
+            rngs=rngs
+        )
     
     def input_embedding(self, x, aug_puzzle_idx):
         embedding = jnp.concatenate([self.puzzle_emb(aug_puzzle_idx), self.embed(x)], axis=1)
