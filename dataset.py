@@ -18,6 +18,28 @@ class JsonDataSource(grain.sources.RandomAccessDataSource):
         return self.data[index]
 
 
+class NumpyDataSource(grain.sources.RandomAccessDataSource):
+    def __init__(self, file_path):
+        self.data = {
+            "inputs": np.load(os.path.join(file_path, "inputs.npy")),
+            "labels": np.load(os.path.join(file_path, "labels.npy")),
+            "aug_puzzle_idx": np.load(os.path.join(file_path, "aug_puzzle_idx.npy")),
+
+        }
+
+    def __len__(self):
+        return self.data["inputs"].shape[0]
+    
+    def __getitem__(self, index):
+        return {
+            "x": self.data["inputs"][index],
+            "y": self.data["labels"][index],
+            "aug_puzzle_idx": self.data["aug_puzzle_idx"][index],
+            "example_idx": index,
+            "colour_aug": [0], # placeholder for now
+            "d8_aug": 0 # placeholder for now
+        }
+
 class Parse(grain.transforms.Map):
     def map(self, record):
         return {
@@ -50,12 +72,11 @@ class Pad(grain.transforms.Map):
         }
     
 
-def get_data_loader(data_dir, batch_size):
-    data_source = JsonDataSource(data_dir)
+def get_data_loader(cfg):
+    data_source = JsonDataSource(cfg.data_dir) if cfg.data_type == "json" else NumpyDataSource(cfg.data_dir)
     sampler = grain.samplers.IndexSampler(len(data_source), seed=0, shuffle=True)
-    operations = [
-        Parse(),
-        Pad(),
-        grain.transforms.Batch(batch_size=batch_size, drop_remainder=True)
-    ]
+    operations = [Parse()]
+    if cfg.data_type == "json":
+        operations.append(Pad())
+    operations.append(grain.transforms.Batch(batch_size=cfg.batch_size, drop_remainder=True))
     return grain.DataLoader(data_source=data_source, operations=operations, sampler=sampler)

@@ -69,8 +69,9 @@ def main(cfg):
         """initialize the carry with the initial data"""
         batch_size = batch['x'].shape[0]
         hidden_dim = z_init.shape[-1]
-        z_init = jnp.broadcast_to(z_init, (batch_size, 916, hidden_dim))
-        y_init = jnp.broadcast_to(y_init, (batch_size, 916, hidden_dim))
+        seq_len = cfg.model.puzzle_emb_len + 900
+        z_init = jnp.broadcast_to(z_init, (batch_size, seq_len, hidden_dim))
+        y_init = jnp.broadcast_to(y_init, (batch_size, seq_len, hidden_dim))
         if cfg.parallel.n_devices > 1:
             z_init = jax.device_put(z_init, data_sharding)
             y_init = jax.device_put(y_init, data_sharding)
@@ -144,12 +145,12 @@ def main(cfg):
         y_loss = stablemax_cross_entropy_with_integer_labels(
             y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float32),
             y_true.reshape(-1)
-        ).mean(where=y_true.reshape(-1) < 10)
+        ).mean()
         if cfg.recursion.act:
             # TODO: only compute for halted ?
             q_loss = optax.sigmoid_binary_cross_entropy(
                 q_logits.reshape(-1),
-                (y_preds == y_true).all(axis=-1, where=y_true < 10)
+                (y_preds == y_true).all(axis=-1)
             ).mean()
         else:
             q_loss = 0
@@ -179,8 +180,8 @@ def main(cfg):
 
         # compute metrics (10 = padding)
         cell_correct = y_preds == carry.y_true # (batch_size, 900)
-        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 10)
-        cell_acc = cell_correct.mean(where=(carry.y_true < 10) & (carry.halted[..., jnp.newaxis]))
+        puzzle_correct = cell_correct.all(axis=-1)
+        cell_acc = cell_correct.mean(where=carry.halted[..., jnp.newaxis])
         puzzle_acc = puzzle_correct.mean(where=carry.halted)
         metrics = {
             "loss": loss,
@@ -214,7 +215,7 @@ def main(cfg):
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
 
     # init data loader
-    train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.batch_size)
+    train_data_loader = get_data_loader(cfg.data)
     train_iter = (shard_data(batch) for batch in train_data_loader)
 
     # init profiler
@@ -234,7 +235,7 @@ def main(cfg):
                 model, optimizer, carry, batch, y_init, z_init,
                 cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
                 cfg.recursion.halt_explore_prob, key
-            )
+            )   # 3 -> seq_len
         if step == 15:
             jax.profiler.stop_trace()
         step_time = time.time() - t0

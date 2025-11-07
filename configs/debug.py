@@ -11,7 +11,7 @@ def get_config():
     cfg = Config()
     cfg.seed = 69420
     
-    cfg.model.vocab_size = 10 + 1 # +1 for padding
+    cfg.model.vocab_size = 10 + 2 # +1 for padding
     cfg.model.hidden_dim = 32
     cfg.model.intermediate_dim = lambda: 1 * cfg.model.hidden_dim
     cfg.model.num_layers = 1
@@ -23,6 +23,7 @@ def get_config():
     cfg.model.use_bias = False
     cfg.model.rope_theta = 10000
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
+    cfg.model.puzzle_emb_len = 16
     
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 6
@@ -47,7 +48,8 @@ def get_config():
 
     cfg.max_steps = 100_000
 
-    cfg.data.data_dir = "data/arc-agi-2-aug-100"
+    cfg.data.data_dir = "data/my-arc2concept-aug-1000"
+    cfg.data.data_type = "numpy"
     cfg.data.batch_size = 4
 
     cfg.parallel.n_devices = 1
