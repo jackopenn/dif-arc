@@ -1,5 +1,6 @@
 import os
 import json
+import math
 
 from sws import Config
 
@@ -11,7 +12,7 @@ def get_config():
     cfg = Config()
     cfg.seed = 69420
     
-    cfg.model.vocab_size = 10 + 1 # +1 for padding
+    cfg.model.vocab_size = 11 + 1 # +1 for padding
     cfg.model.hidden_dim = 512
     cfg.model.intermediate_dim = lambda: 4 * cfg.model.hidden_dim
     cfg.model.num_layers = 2
@@ -22,14 +23,14 @@ def get_config():
     cfg.model.tie_embeddings = False
     cfg.model.use_bias = False
     cfg.model.rope_theta = 10000 # none = learned
-    cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
+    cfg.model.puzzle_vocab_size = lambda: math.ceil(get_puzzle_vocab_size(cfg.data.data_dir) / 64) * 64
     cfg.model.puzzle_emb_len = 16
 
     cfg.recursion.N_supervision = 16
-    cfg.recursion.n = 6
-    cfg.recursion.T = 3
-    cfg.recursion.act = False
-    cfg.recursion.halt_explore_prob = 0.0
+    cfg.recursion.n = 4
+    cfg.recursion.T = 2
+    cfg.recursion.act = True
+    cfg.recursion.halt_explore_prob = 0.1
     
     cfg.optim.weight_decay = 0.1
     cfg.optim.b1 = 0.9
@@ -43,13 +44,16 @@ def get_config():
     cfg.embed_schedule.warmup_steps = warmup_steps
     
     cfg.other_schedule.init_value = init_value
-    cfg.other_schedule.peak_value = 1e-4
+    cfg.other_schedule.peak_value = 1e-5
     cfg.other_schedule.warmup_steps = warmup_steps
 
     cfg.max_steps = 100_000
 
-    cfg.data.data_dir = "data/arc-agi-2-aug-100"
-    cfg.data.batch_size = 512
+    cfg.data.data_dir = "data/my-arc2concept-aug-1000"
+    cfg.data.data_type = "numpy"
+    # cfg.data.data_dir = "data/arc-aug-100"
+    # cfg.data.data_type = "json"
+    cfg.data.batch_size = 304
 
     cfg.parallel.n_devices = 8
     

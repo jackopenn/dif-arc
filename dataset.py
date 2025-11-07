@@ -21,9 +21,9 @@ class JsonDataSource(grain.sources.RandomAccessDataSource):
 class NumpyDataSource(grain.sources.RandomAccessDataSource):
     def __init__(self, file_path):
         self.data = {
-            "inputs": np.load(os.path.join(file_path, "inputs.npy")),
-            "labels": np.load(os.path.join(file_path, "labels.npy")),
-            "aug_puzzle_idx": np.load(os.path.join(file_path, "aug_puzzle_idx.npy")),
+            "inputs": np.load(os.path.join(file_path, "inputs.npy"), mmap_mode="r"),
+            "labels": np.load(os.path.join(file_path, "labels.npy"), mmap_mode="r"),
+            "aug_puzzle_idx": np.load(os.path.join(file_path, "aug_puzzle_idx.npy"), mmap_mode="r"),
 
         }
 
@@ -32,8 +32,8 @@ class NumpyDataSource(grain.sources.RandomAccessDataSource):
     
     def __getitem__(self, index):
         return {
-            "x": self.data["inputs"][index],
-            "y": self.data["labels"][index],
+            "x": self.data["inputs"][index].astype(np.int32),
+            "y": self.data["labels"][index].astype(np.int32),
             "aug_puzzle_idx": self.data["aug_puzzle_idx"][index],
             "example_idx": index,
             "colour_aug": [0], # placeholder for now
@@ -73,7 +73,7 @@ class Pad(grain.transforms.Map):
     
 
 def get_data_loader(cfg):
-    data_source = JsonDataSource(cfg.data_dir) if cfg.data_type == "json" else NumpyDataSource(cfg.data_dir)
+    data_source = JsonDataSource(cfg.data_dir+"/train.jsonl") if cfg.data_type == "json" else NumpyDataSource(cfg.data_dir)
     sampler = grain.samplers.IndexSampler(len(data_source), seed=0, shuffle=True)
     operations = [Parse()]
     if cfg.data_type == "json":

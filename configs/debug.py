@@ -22,7 +22,7 @@ def get_config():
     cfg.model.tie_embeddings = False
     cfg.model.use_bias = False
     cfg.model.rope_theta = 10000
-    cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
+    cfg.model.puzzle_vocab_size = lambda: math.ceil(get_puzzle_vocab_size(cfg.data.data_dir) / 64) * 64
     cfg.model.puzzle_emb_len = 16
     
     cfg.recursion.N_supervision = 16

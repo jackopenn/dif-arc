@@ -45,6 +45,7 @@ def main(cfg):
 
         _, model_state = nnx.split(model)
         sharded_model_state = jax.lax.with_sharding_constraint(model_state, repl_sharding)
+        sharded_model_state.puzzle_emb.embedding.value = jax.lax.with_sharding_constraint(sharded_model_state.puzzle_emb.embedding.value, data_sharding)
         nnx.update(model, sharded_model_state)
         
         _, optimizer_state = nnx.split(optimizer)
@@ -226,6 +227,9 @@ def main(cfg):
     t0 = time.time()
     for step, batch in enumerate(train_iter):
         batch = shard_data(batch)
+        # for k, v in batch.items():
+        #     print(k, v.shape, v.dtype)
+        # exit()
         if step == 0:
             carry = init_carry(batch, z_init, y_init)
         if step == 10: 
