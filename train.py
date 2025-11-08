@@ -25,10 +25,10 @@ def main(cfg):
     tx = optax.partition(
         {
             "embed": optax.adamw(
-                optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()),**cfg.optim.to_dict()
+                optax.warmup_cosine_decay_schedule(**cfg.embed_schedule.to_dict()),**cfg.optim.to_dict()
             ),
             "other": optax.adamw(
-                optax.warmup_constant_schedule(**cfg.other_schedule.to_dict()), **cfg.optim.to_dict()
+                optax.warmup_cosine_decay_schedule(**cfg.other_schedule.to_dict()), **cfg.optim.to_dict()
             )
         },
         lambda state: jax.tree.map_with_path(lambda path, _: "embed" if path[0].key == "embed" else "other", state)
@@ -146,12 +146,12 @@ def main(cfg):
         y_loss = stablemax_cross_entropy_with_integer_labels(
             y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float32),
             y_true.reshape(-1)
-        ).mean()
+        ).mean(where=y_true.reshape(-1) > 0)
         if cfg.recursion.act:
             # TODO: only compute for halted ?
             q_loss = optax.sigmoid_binary_cross_entropy(
                 q_logits.reshape(-1),
-                (y_preds == y_true).all(axis=-1)
+                (y_preds == y_true).all(axis=-1, where=y_true > 0)
             ).mean()
         else:
             q_loss = 0
@@ -181,8 +181,8 @@ def main(cfg):
 
         # compute metrics (10 = padding)
         cell_correct = y_preds == carry.y_true # (batch_size, 900)
-        puzzle_correct = cell_correct.all(axis=-1)
-        cell_acc = cell_correct.mean(where=carry.halted[..., jnp.newaxis])
+        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true > 0)
+        cell_acc = cell_correct.mean(where=(carry.y_true > 0) & (carry.halted[..., jnp.newaxis]))
         puzzle_acc = puzzle_correct.mean(where=carry.halted)
         metrics = {
             "loss": loss,

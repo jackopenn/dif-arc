@@ -24,7 +24,7 @@ def get_config():
     cfg.model.use_bias = False
     cfg.model.rope_theta = 10000 # none = learned
     cfg.model.puzzle_vocab_size = lambda: math.ceil(get_puzzle_vocab_size(cfg.data.data_dir) / 64) * 64
-    cfg.model.puzzle_emb_len = 16
+    cfg.model.puzzle_emb_len = 1
 
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 4
@@ -42,12 +42,16 @@ def get_config():
     cfg.embed_schedule.init_value = init_value
     cfg.embed_schedule.peak_value = 1e-2
     cfg.embed_schedule.warmup_steps = warmup_steps
+    cfg.embed_schedule.end_value = 1e-5
+    cfg.embed_schedule.decay_steps = lambda: cfg.max_steps
     
     cfg.other_schedule.init_value = init_value
-    cfg.other_schedule.peak_value = 1e-5
+    cfg.other_schedule.peak_value = 1e-4
     cfg.other_schedule.warmup_steps = warmup_steps
+    cfg.other_schedule.end_value = 1e-7
+    cfg.other_schedule.decay_steps = lambda: cfg.max_steps
 
-    cfg.max_steps = 100_000
+    cfg.max_steps = 800_000
 
     cfg.data.data_dir = "data/my-arc2concept-aug-1000"
     cfg.data.data_type = "numpy"
