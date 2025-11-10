@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 class JsonDataSource(grain.sources.RandomAccessDataSource):
     def __init__(self, file_path):
-        self.data = [json.loads(line.strip()) for line in tqdm(open(file_path, 'r').readlines())] 
+        self.data = [json.loads(line.strip()) for line in tqdm(open(file_path, 'r').readlines())]
 
     def __len__(self):
         return len(self.data)
@@ -27,6 +27,7 @@ class Parse(grain.transforms.Map):
             "d8_aug": np.asarray([record["d8_aug"]]),
             "example_idx": np.asarray([record["example_idx"]]),
             "aug_puzzle_idx": np.asarray([record["aug_puzzle_idx"]]),
+            "puzzle_id": np.asarray([record["puzzle_id"]]),
         }
 
         
@@ -50,12 +51,12 @@ class Pad(grain.transforms.Map):
         }
     
 
-def get_data_loader(data_dir, batch_size):
+def get_data_loader(data_dir, batch_size, repeat=True, drop_remainder=True):
     data_source = JsonDataSource(data_dir)
-    sampler = grain.samplers.IndexSampler(len(data_source), seed=0, shuffle=True)
+    sampler = grain.samplers.IndexSampler(len(data_source), seed=0, shuffle=True, num_epochs=None if repeat else 1)
     operations = [
         Parse(),
         Pad(),
-        grain.transforms.Batch(batch_size=batch_size, drop_remainder=True)
+        grain.transforms.Batch(batch_size=batch_size, drop_remainder=drop_remainder)
     ]
     return grain.DataLoader(data_source=data_source, operations=operations, sampler=sampler)

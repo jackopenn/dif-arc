@@ -1,12 +1,13 @@
 import jax
 
 class MetricLogger:
-    def __init__(self, batch_size, wandb=None):
+    def __init__(self, batch_size, prefix, buffer=True, wandb=None):
         self.batch_size = batch_size
+        self.prefix = prefix
+        self.buffer = buffer
         self.wandb = wandb
 
         self.prev_metrics = None
-        self.step = 1
 
 
     def _human_format(self, num: float, billions: bool = False, divide_by_1024: bool = False) -> str:
@@ -24,21 +25,25 @@ class MetricLogger:
         return "{}{}".format("{:f}".format(num).rstrip("0").rstrip("."), SIZES[magnitude])
 
 
-    def _pretty_print(self, metrics):
-        print_string = f"step: {self.step}"
+    def _pretty_print(self, metrics, step):
+        print_string = f"step: {step}"
         for k, v in metrics.items():
             print_string += f" | {k}: {self._human_format(v)}"
         print(print_string)
 
 
     def log(self, metrics):
-        self.prev_metrics, log_metrics = metrics, self.prev_metrics 
+        if self.buffer:
+            self.prev_metrics, log_metrics = metrics, self.prev_metrics 
+        else:
+            log_metrics = metrics
         if not log_metrics:
             return
+        step = log_metrics.pop("step")
         # move to cpu - to not block 
         log_metrics = jax.tree.map(lambda x: float(x), log_metrics)
         log_metrics["samples_per_second"] = self.batch_size / log_metrics["step_time"]
-        self._pretty_print(log_metrics)
+        self._pretty_print(log_metrics, step)
         if self.wandb:
-            self.wandb.log(log_metrics, step=self.step)
-        self.step += 1
+            log_metrics = {f"{self.prefix}/{k}": v for k, v in log_metrics.items()}
+            self.wandb.log(log_metrics, step=step)

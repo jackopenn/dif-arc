@@ -13,6 +13,7 @@ from functools import partial
 from dataset import get_data_loader
 from modelling.model import Model
 from utils import MetricLogger
+from evaluate import evaluate
 
 # TODO: log epochs
 # TODO: add eval loop (match augs in eval set)
@@ -203,10 +204,12 @@ def main(cfg):
     # init logging 
     if cfg.wandb:
         wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
-        train_logger = MetricLogger(cfg.data.batch_size, wandb)
+        train_logger = MetricLogger(cfg.data.batch_size, prefix="train", buffer=True, wandb=wandb)
+        val_logger = MetricLogger(cfg.data.batch_size, prefix="val", buffer=False, wandb=wandb)
     else:
-        train_logger = MetricLogger(cfg.data.batch_size, None)
-
+        train_logger = MetricLogger(cfg.data.batch_size, prefix="train", buffer=True, wandb=None)
+        val_logger = MetricLogger(cfg.data.batch_size, prefix="val", buffer=False, wandb=None)
+        
     # init latents
     key, y_key, z_key = jax.random.split(key, 3)
     initializer = jax.nn.initializers.truncated_normal(stddev=1.0)
@@ -214,8 +217,10 @@ def main(cfg):
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
 
     # init data loader
-    train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.batch_size)
+    train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.batch_size, repeat=True, drop_remainder=True)
     train_iter = (shard_data(batch) for batch in train_data_loader)
+    
+    val_data_loader_factory = lambda: get_data_loader(cfg.data.data_dir + "/test.jsonl", cfg.data.batch_size, repeat=False, drop_remainder=False)
 
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
@@ -224,6 +229,7 @@ def main(cfg):
 
     t0 = time.time()
     for step, batch in enumerate(train_iter):
+        batch.pop("puzzle_id")
         batch = shard_data(batch)
         if step == 0:
             carry = init_carry(batch, z_init, y_init)
@@ -238,8 +244,12 @@ def main(cfg):
         if step == 15:
             jax.profiler.stop_trace()
         step_time = time.time() - t0
-        train_logger.log({**metrics, "step_time": step_time})
+        train_logger.log({**metrics, "step_time": step_time, "step": step})
         t0 = time.time()
+        
+        if step > 0 and step % cfg.eval.eval_every == 0:
+            val_metrics = evaluate(model, val_data_loader_factory, y_init, z_init, cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T, cfg.eval.pass_ks, shard_data)
+            val_logger.log({**val_metrics, "step_time": step_time, "step": step})
 
 if __name__ == "__main__":
     run(main)

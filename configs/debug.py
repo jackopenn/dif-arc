@@ -23,6 +23,7 @@ def get_config():
     cfg.model.use_bias = False
     cfg.model.rope_theta = 10000
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
+    cfg.model.puzzle_emb_len = 16
     
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 6
@@ -53,5 +54,8 @@ def get_config():
     cfg.parallel.n_devices = 1
 
     cfg.wandb = False
+    
+    cfg.eval.pass_ks = [1, 2, 5, 10, 100, 1000]
+    cfg.eval.eval_every = 100
 
     return cfg
