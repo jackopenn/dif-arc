@@ -48,7 +48,7 @@ def get_config():
 
     cfg.max_steps = 100_000
 
-    cfg.data.data_dir = "data/arc-agi-2-aug-100"
+    cfg.data.data_dir = "data/arc-aug-100"
     cfg.data.batch_size = 4
 
     cfg.parallel.n_devices = 1
@@ -56,6 +56,6 @@ def get_config():
     cfg.wandb = False
     
     cfg.eval.pass_ks = [1, 2, 5, 10, 100, 1000]
-    cfg.eval.eval_every = 100
+    cfg.eval.eval_every = 10
 
     return cfg

@@ -28,8 +28,8 @@ def get_config():
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 6
     cfg.recursion.T = 3
-    cfg.recursion.act = False
-    cfg.recursion.halt_explore_prob = 0.0
+    cfg.recursion.act = True
+    cfg.recursion.halt_explore_prob = 0.1
     
     cfg.optim.weight_decay = 0.1
     cfg.optim.b1 = 0.9
@@ -48,11 +48,14 @@ def get_config():
 
     cfg.max_steps = 100_000
 
-    cfg.data.data_dir = "data/arc-agi-2-aug-100"
+    cfg.data.data_dir = "data/arc-aug-100"
     cfg.data.batch_size = 512
 
     cfg.parallel.n_devices = 8
     
     cfg.wandb = True
+    
+    cfg.eval.pass_ks = [1, 2, 5, 10, 100]
+    cfg.eval.eval_every = 10_000
 
     return cfg
