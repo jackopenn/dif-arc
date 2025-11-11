@@ -119,7 +119,7 @@ def get_top_k_preds(example_preds, k):
 
 
 
-def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pass_ks, shard_data):
+def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pass_ks, shard_data, batch_size):
     
     # preds = {
     #     "abcde1g7": {
@@ -135,11 +135,13 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
     # }
     preds = {}
     data_loader = data_loader_factory()
-    for batch in tqdm(data_loader, desc="evaluating", total=ceil(len(data_loader._data_source) / data_loader.batch_size))):
+    for batch in tqdm(data_loader, desc="evaluating", total=ceil(len(data_loader._data_source) / batch_size)):
         puzzle_ids = batch.pop("puzzle_id")
         colour_augs = batch.pop("colour_aug")
         d8_augs = batch.pop("d8_aug")
         example_idxs = batch.pop("example_idx")
+
+        batch = shard_data(batch)
 
         y_preds = eval_step(model, batch, y_init, z_init, N_supervision, n, T, shard_data)
         y_preds = np.array(y_preds.reshape(batch['x'].shape[0], 30, 30))
@@ -201,6 +203,8 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         for k, vs in ks.items():
             passes_reduced[k] = passes_reduced.get(k, 0) + int(all(vs))
 
+    print(passes_reduced)
+    
     n_puzzles = len(passes)
     passes_reduced = {f"pass_{k}": n_true / n_puzzles for k, n_true in passes_reduced.items()}
 
