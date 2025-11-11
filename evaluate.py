@@ -1,5 +1,6 @@
 from functools import partial
 from math import ceil
+import hashlib
 
 import jax
 from jax import numpy as jnp
@@ -45,8 +46,15 @@ def crop(grid):
     h, w = no() if max_area <= 0 else yes()
     return grid[:h, :w]
 
-def hash(array):
-    return tuple(array.flatten())
+
+def hash(grid: np.ndarray):
+    assert grid.ndim == 2
+
+    buffer = [x.to_bytes(1, byteorder='big') for x in grid.shape]
+    buffer.append(grid.tobytes())
+    
+    return hashlib.sha256(b"".join(buffer)).hexdigest()
+
 
 @struct.dataclass
 class Carry:
