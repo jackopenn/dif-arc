@@ -2,11 +2,13 @@ import os
 import json
 from functools import partial
 import random
+import hashlib
 
 import jax
-from jax import numpy as jnp
+import numpy as np
 from tqdm import tqdm
 from sws import Config, run
+
 
 
 def get_config():
@@ -17,26 +19,85 @@ def get_config():
     cfg.test_set = "evaluation"
     cfg.n_augs = 10
     cfg.bg_colour_aug = False # False: keep background black
-    cfg.seed = 69420    
+    cfg.seed = 69420
+    cfg.aug_retry_factor = 5
     return cfg
 
 
 def d8_aug(puzzle_sample, op_idx):
     ops = [
         lambda x: x,
-        partial(jnp.rot90, k=1),
-        partial(jnp.rot90, k=2),
-        partial(jnp.rot90, k=3),
-        jnp.fliplr,
-        jnp.flipud,
-        jnp.transpose,
-        lambda x: jnp.fliplr(jnp.rot90(x, k=1)),
+        partial(np.rot90, k=1),
+        partial(np.rot90, k=2),
+        partial(np.rot90, k=3),
+        np.fliplr,
+        np.flipud,
+        np.transpose,
+        lambda x: np.fliplr(np.rot90(x, k=1)),
     ]
     return ops[op_idx](puzzle_sample)
 
 
 def colour_aug(puzzle_sample, colours):
     return colours[puzzle_sample]
+
+
+def grid_hash(grid: np.ndarray):
+    assert grid.ndim == 2
+
+    buffer = [x.to_bytes(1, byteorder='big') for x in grid.shape]
+    buffer.append(grid.tobytes())
+    
+    return hashlib.sha256(b"".join(buffer)).hexdigest()
+
+
+def puzzle_hash(puzzle: dict):
+    # Hash the puzzle for checking equivalence
+    hashes = []
+    for example in puzzle['examples']:
+        hashes.append(f"{grid_hash(example['x'])}|{grid_hash(example['y'])}")
+    hashes.sort()
+    return hashlib.sha256("|".join(hashes).encode()).hexdigest()
+
+
+def inverse_d8_aug(puzzle_sample, op_idx):
+    ops = [
+        lambda x: x,
+        partial(np.rot90, k=-1),
+        partial(np.rot90, k=-2),
+        partial(np.rot90, k=-3),
+        np.fliplr,
+        np.flipud,
+        np.transpose,
+        lambda x: np.fliplr(np.rot90(x, k=1)),
+    ]
+    return ops[op_idx](puzzle_sample)
+
+
+def inverse_colour_aug(puzzle_sample, colours):
+    colours = np.argsort(colours)
+    return colours[puzzle_sample]
+
+
+def crop(grid):
+    # gpt5 made this
+    H, W = grid.shape
+    safe = (grid != 10).astype(np.int32)
+    S = np.cumsum(np.cumsum(safe, 0), 1)
+    hs, ws = np.arange(1, H+1)[:, None], np.arange(1, W+1)[None, :]
+    areas = hs * ws
+    ma = np.where(S == areas, areas, -1)
+    idx = np.argmax(ma)
+    max_area = ma.reshape(-1)[idx]
+
+    def no():
+        return np.array(0, np.int32), np.array(0, np.int32)
+    def yes():
+        h_idx, w_idx = np.divmod(idx, W)
+        return h_idx + 1, w_idx + 1
+    
+    h, w = no() if max_area <= 0 else yes()
+    return grid[:h, :w]
 
 
 def main(cfg):
@@ -67,8 +128,8 @@ def main(cfg):
                     else:
                         n_train_examples += 1
                     examples.append({
-                        "x": jnp.asarray(pair['input']),
-                        "y": jnp.asarray(pair['output']),
+                        "x": np.asarray(pair['input']),
+                        "y": np.asarray(pair['output']),
                         "split": split
                     })
 
@@ -84,28 +145,28 @@ def main(cfg):
     puzzle_idx = 0
     for puzzle in tqdm(puzzles, desc="augmenting"):
         # no augs
+        # print(puzzle)
         base = puzzle.copy() 
         base["puzzle_idx"] = puzzle_idx
         base["aug_puzzle_idx"] = aug_puzzle_idx
         base["d8_aug"] = 0 
-        base["colour_aug"] = jnp.arange(10)
+        base["colour_aug"] = np.arange(10)
         aug_puzzles.append(base)
-        puzzle_metas = {(base['puzzle_id'], base['d8_aug'], str(base["colour_aug"]))}
+        puzzle_hashes = {puzzle_hash(base)}
 
-        # TODO: someimtes impossible to do all augs. some colours don't exist. will have duplidate augs
-        # check hash of puzzles instead
 
         # keep trying augs until unique n_augs
-        current_augs = 0
-        while current_augs < cfg.n_augs:
+        for i in range(cfg.n_augs * cfg.aug_retry_factor):
+            # print(i)
             key, op_key, colour_key = jax.random.split(key, 3)
             op_idx = jax.random.randint(op_key, (), 0, 8).item()
             if cfg.bg_colour_aug:
-                colours = jax.random.permutation(colour_key, jnp.arange(10))
+                colours = jax.random.permutation(colour_key, np.arange(10))
             else:
                 # keep background black (0)
-                colours = jnp.concatenate([jnp.array([0]), jax.random.permutation(colour_key, jnp.arange(1, 10))])
+                colours = np.concatenate([np.array([0]), jax.random.permutation(colour_key, np.arange(1, 10))])
 
+            # print(op_idx, colours)
             aug_puzzle = {
                 "puzzle_id": puzzle['puzzle_id'],
                 "subset": puzzle['subset'],
@@ -121,12 +182,21 @@ def main(cfg):
                     } for example in puzzle['examples']
                 ]
             }
-            aug_meta = (aug_puzzle['puzzle_id'], aug_puzzle['d8_aug'], str(aug_puzzle["colour_aug"]))
-            if aug_meta not in puzzle_metas:
+
+            # print(aug_puzzles)
+            hashed_puzzle = puzzle_hash(aug_puzzle)
+            # print(hashed_puzzle)
+            if hashed_puzzle not in puzzle_hashes:
+                # print(op_idx, colours)
                 aug_puzzles.append(aug_puzzle)
-                puzzle_metas.add(aug_meta)
-                current_augs += 1
+                puzzle_hashes.add(hashed_puzzle)
                 aug_puzzle_idx += 1
+
+            if len(puzzle_hashes) >= cfg.n_augs + 1:
+                break
+
+        if len(puzzle_hashes) < cfg.n_augs + 1:
+            print(f"WARNING: only {len(puzzle_hashes)} augs found for puzzle {puzzle['puzzle_id']}")
 
     flat_aug_puzzles = []
     n_train_aug_puzzles = 0

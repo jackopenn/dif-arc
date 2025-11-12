@@ -1,6 +1,4 @@
-from functools import partial
 from math import ceil
-import hashlib
 
 import jax
 from jax import numpy as jnp
@@ -8,54 +6,7 @@ import numpy as np
 from flax import nnx, struct
 from tqdm import tqdm
 
-
-def inverse_d8_aug(puzzle_sample, op_idx):
-    ops = [
-        lambda x: x,
-        partial(np.rot90, k=-1),
-        partial(np.rot90, k=-2),
-        partial(np.rot90, k=-3),
-        np.fliplr,
-        np.flipud,
-        np.transpose,
-        lambda x: np.fliplr(np.rot90(x, k=1)),
-    ]
-    return ops[op_idx](puzzle_sample)
-
-
-def inverse_colour_aug(puzzle_sample, colours):
-    colours = np.argsort(colours)
-    return colours[puzzle_sample]
-
-def crop(grid):
-    # gpt5 made this
-    H, W = grid.shape
-    safe = (grid != 10).astype(np.int32)
-    S = np.cumsum(np.cumsum(safe, 0), 1)
-    hs, ws = np.arange(1, H+1)[:, None], np.arange(1, W+1)[None, :]
-    areas = hs * ws
-    ma = np.where(S == areas, areas, -1)
-    idx = np.argmax(ma)
-    max_area = ma.reshape(-1)[idx]
-
-    def no():
-        return np.array(0, np.int32), np.array(0, np.int32)
-    def yes():
-        h_idx, w_idx = np.divmod(idx, W)
-        return h_idx + 1, w_idx + 1
-    
-    h, w = no() if max_area <= 0 else yes()
-    return grid[:h, :w]
-
-
-def hash(grid: np.ndarray):
-    assert grid.ndim == 2
-
-    buffer = [x.to_bytes(1, byteorder='big') for x in grid.shape]
-    buffer.append(grid.tobytes())
-    
-    return hashlib.sha256(b"".join(buffer)).hexdigest()
-
+from scripts.build_arc_dataset import inverse_d8_aug, inverse_colour_aug, crop, grid_hash
 
 @struct.dataclass
 class Carry:
@@ -157,7 +108,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
             y_pred = y_preds[i]
             
             y_pred = crop(y_pred)
-            y_pred = hash(inverse_d8_aug(inverse_colour_aug(y_pred, colour_aug), d8_aug))
+            y_pred = grid_hash(inverse_d8_aug(inverse_colour_aug(y_pred, colour_aug), d8_aug))
 
             if puzzle_id not in preds:
                 preds[puzzle_id] = {}
@@ -165,7 +116,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
                 preds[puzzle_id][example_idx] = {"y_true": None, "y_preds": dict()}
                 y_true = y_trues[i]
                 y_true = crop(y_true)
-                y_true = hash(inverse_d8_aug(inverse_colour_aug(y_true, colour_aug), d8_aug))
+                y_true = grid_hash(inverse_d8_aug(inverse_colour_aug(y_true, colour_aug), d8_aug))
                 preds[puzzle_id][example_idx]['y_true'] = y_true
 
             if y_pred not in preds[puzzle_id][example_idx]['y_preds']:
