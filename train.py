@@ -1,14 +1,11 @@
 import time
 import jax
 import jax.numpy as jnp
-from jax.sharding import NamedSharding, Mesh, PartitionSpec as P
+from jax.sharding import NamedSharding, PartitionSpec as P
 from flax import nnx, struct
 import optax
-import json
-import os
-from sws import Config, run
+from sws import run
 import wandb
-from functools import partial
 
 from dataset import get_data_loader
 from modelling.model import Model

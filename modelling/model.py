@@ -1,6 +1,5 @@
-from functools import reduce, partial
+from functools import reduce
 
-import jax
 from jax import numpy as jnp
 from flax import nnx
 from modelling.layers import TransformerBlock
