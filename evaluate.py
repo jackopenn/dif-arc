@@ -24,6 +24,7 @@ def inverse_d8_aug(puzzle_sample, op_idx):
 
 
 def inverse_colour_aug(puzzle_sample, colours):
+    colours = np.argsort(colours)
     return colours[puzzle_sample]
 
 def crop(grid):
