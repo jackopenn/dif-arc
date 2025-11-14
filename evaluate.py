@@ -96,68 +96,70 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         batch = shard_data(batch)
 
         y_preds = eval_step(model, batch, y_init, z_init, N_supervision, n, T, shard_data)
-        y_preds = np.array(y_preds.reshape(batch['x'].shape[0], 30, 30))
-        y_trues = np.array(batch['y'].reshape(batch['x'].shape[0], 30, 30))
         
-        for i in range(batch['x'].shape[0]):
-            # Unwrap scalars from batched fields
-            puzzle_id = str(puzzle_ids[i][0])
-            example_idx = int(example_idxs[i][0])
-            d8_aug = int(d8_augs[i][0])
-            colour_aug = colour_augs[i]
-            y_pred = y_preds[i]
+        if jax.process_index() == 0:
+            y_preds = np.array(y_preds.reshape(batch['x'].shape[0], 30, 30))
+            y_trues = np.array(batch['y'].reshape(batch['x'].shape[0], 30, 30))
             
-            y_pred = crop(y_pred)
-            y_pred = grid_hash(inverse_d8_aug(inverse_colour_aug(y_pred, colour_aug), d8_aug))
-
-            if puzzle_id not in preds:
-                preds[puzzle_id] = {}
-            if example_idx not in preds[puzzle_id]:
-                preds[puzzle_id][example_idx] = {"y_true": None, "y_preds": dict()}
-                y_true = y_trues[i]
-                y_true = crop(y_true)
-                y_true = grid_hash(inverse_d8_aug(inverse_colour_aug(y_true, colour_aug), d8_aug))
-                preds[puzzle_id][example_idx]['y_true'] = y_true
-
-            if y_pred not in preds[puzzle_id][example_idx]['y_preds']:
-                preds[puzzle_id][example_idx]['y_preds'][y_pred] = 1
-            else:
-                preds[puzzle_id][example_idx]['y_preds'][y_pred] += 1
-
-    # passes = {
-    #     "abcde1g7": {
-    #         k_1: [True, False],
-    #         k_2: [True, False],
-    #         ...
-    #         k_n: [True, False]
-    #     }
-    # }
-    passes = {}
-    for puzzle_id, data in tqdm(preds.items(), desc="computing passes"):
-        for example_idx, example in data.items():
-            y_true = example['y_true']
-            for k in pass_ks:
-                top_k_preds = get_top_k_preds(example['y_preds'], k)
-                if puzzle_id not in passes:
-                    passes[puzzle_id] = {}
-                if k not in passes[puzzle_id]:
-                    passes[puzzle_id][k] = []
-                passes[puzzle_id][k].append(y_true in top_k_preds)
+            for i in range(batch['x'].shape[0]):
+                # Unwrap scalars from batched fields
+                puzzle_id = str(puzzle_ids[i][0])
+                example_idx = int(example_idxs[i][0])
+                d8_aug = int(d8_augs[i][0])
+                colour_aug = colour_augs[i]
+                y_pred = y_preds[i]
                 
-    # passes_reduced = {
-    #     k_1: n_true,
-    #     k_2: n_true,
-    #     ...
-    #     k_n: n_true
-    # }
-    passes_reduced = {}
-    for puzzle_id, ks in tqdm(passes.items(), desc="computing passes reduced"):
-        for k, vs in ks.items():
-            passes_reduced[k] = passes_reduced.get(k, 0) + int(all(vs))
+                y_pred = crop(y_pred)
+                y_pred = grid_hash(inverse_d8_aug(inverse_colour_aug(y_pred, colour_aug), d8_aug))
 
-    print(passes_reduced)
-    
-    n_puzzles = len(passes)
-    passes_reduced = {f"pass_{k}": n_true / n_puzzles for k, n_true in passes_reduced.items()}
+                if puzzle_id not in preds:
+                    preds[puzzle_id] = {}
+                if example_idx not in preds[puzzle_id]:
+                    preds[puzzle_id][example_idx] = {"y_true": None, "y_preds": dict()}
+                    y_true = y_trues[i]
+                    y_true = crop(y_true)
+                    y_true = grid_hash(inverse_d8_aug(inverse_colour_aug(y_true, colour_aug), d8_aug))
+                    preds[puzzle_id][example_idx]['y_true'] = y_true
+
+                if y_pred not in preds[puzzle_id][example_idx]['y_preds']:
+                    preds[puzzle_id][example_idx]['y_preds'][y_pred] = 1
+                else:
+                    preds[puzzle_id][example_idx]['y_preds'][y_pred] += 1
+
+        # passes = {
+        #     "abcde1g7": {
+        #         k_1: [True, False],
+        #         k_2: [True, False],
+        #         ...
+        #         k_n: [True, False]
+        #     }
+        # }
+        passes = {}
+        for puzzle_id, data in tqdm(preds.items(), desc="computing passes"):
+            for example_idx, example in data.items():
+                y_true = example['y_true']
+                for k in pass_ks:
+                    top_k_preds = get_top_k_preds(example['y_preds'], k)
+                    if puzzle_id not in passes:
+                        passes[puzzle_id] = {}
+                    if k not in passes[puzzle_id]:
+                        passes[puzzle_id][k] = []
+                    passes[puzzle_id][k].append(y_true in top_k_preds)
+                    
+        # passes_reduced = {
+        #     k_1: n_true,
+        #     k_2: n_true,
+        #     ...
+        #     k_n: n_true
+        # }
+        passes_reduced = {}
+        for puzzle_id, ks in tqdm(passes.items(), desc="computing passes reduced"):
+            for k, vs in ks.items():
+                passes_reduced[k] = passes_reduced.get(k, 0) + int(all(vs))
+
+        print(passes_reduced)
+        
+        n_puzzles = len(passes)
+        passes_reduced = {f"pass_{k}": n_true / n_puzzles for k, n_true in passes_reduced.items()}
 
     return passes_reduced
