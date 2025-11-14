@@ -118,7 +118,10 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
                 preds[puzzle_id][example_idx]['y_preds'][y_pred] = 1
             else:
                 preds[puzzle_id][example_idx]['y_preds'][y_pred] += 1
+    
 
+
+    preds = jax.experimental.multihost_utils.process_allgather(preds)
     if jax.process_index() == 0:
         # passes = {
         #     "abcde1g7": {
@@ -128,7 +131,6 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         #         k_n: [True, False]
         #     }
         # }
-        preds = jax.experimental.multihost_utils.process_allgather(preds)
         passes = {}
         for puzzle_id, data in tqdm(preds.items(), desc="computing passes"):
             for example_idx, example in data.items():
