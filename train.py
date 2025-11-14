@@ -16,6 +16,7 @@ from evaluate import evaluate
 # TODO: add eval loop (match augs in eval set)
 
 def main(cfg):
+    jax.distributed.initialize()
     key = jax.random.key(cfg.seed)
     
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
@@ -49,7 +50,8 @@ def main(cfg):
         sharded_optimizer_state = jax.lax.with_sharding_constraint(optimizer_state, repl_sharding)
         nnx.update(optimizer, sharded_optimizer_state)
 
-        shard_data = lambda data: jax.tree.map(lambda x: jax.device_put(x, data_sharding), data)
+        # shard_data = lambda data: jax.tree.map(lambda x: jax.device_put(x, data_sharding), data)
+        shard_data = lambda data: jax.tree.map(lambda x: jax.make_array_from_process_local_data(x, data_sharding), data)
 
 
     @struct.dataclass
@@ -199,13 +201,14 @@ def main(cfg):
         return carry, metrics, key
     
     # init logging 
-    if cfg.wandb:
-        wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
-        train_logger = MetricLogger(cfg.data.batch_size, prefix="train", buffer=True, wandb=wandb)
-        val_logger = MetricLogger(cfg.data.batch_size, prefix="val", buffer=False, wandb=wandb)
-    else:
-        train_logger = MetricLogger(cfg.data.batch_size, prefix="train", buffer=True, wandb=None)
-        val_logger = MetricLogger(cfg.data.batch_size, prefix="val", buffer=False, wandb=None)
+    if jax.process_index() == 0:
+        if cfg.wandb:
+            wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
+            train_logger = MetricLogger(cfg.data.batch_size, prefix="train", buffer=True, wandb=wandb)
+            val_logger = MetricLogger(cfg.data.batch_size, prefix="val", buffer=False, wandb=wandb)
+        else:
+            train_logger = MetricLogger(cfg.data.batch_size, prefix="train", buffer=True, wandb=None)
+            val_logger = MetricLogger(cfg.data.batch_size, prefix="val", buffer=False, wandb=None)
         
     # init latents
     key, y_key, z_key = jax.random.split(key, 3)
@@ -239,12 +242,14 @@ def main(cfg):
         if step == 15:
             jax.profiler.stop_trace()
         step_time = time.time() - t0
-        train_logger.log({**metrics, "step_time": step_time, "step": step})
+        if jax.process_index() == 0:
+            train_logger.log({**metrics, "step_time": step_time, "step": step})
         t0 = time.time()
         
         if step > 0 and step % cfg.eval.eval_every == 0:
             val_metrics = evaluate(model, val_data_loader_factory, y_init, z_init, cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T, cfg.eval.pass_ks, shard_data, cfg.data.batch_size)
-            val_logger.log({**val_metrics, "step_time": step_time, "step": step})
+            if jax.process_index() == 0:
+                val_logger.log({**val_metrics, "step_time": step_time, "step": step})
 
 if __name__ == "__main__":
     run(main)

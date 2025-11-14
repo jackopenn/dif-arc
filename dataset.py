@@ -1,5 +1,6 @@
 import json
 
+import jax
 import grain
 import numpy as np
 from tqdm import tqdm
@@ -50,11 +51,18 @@ class Pad(grain.transforms.Map):
     
 
 def get_data_loader(data_dir, batch_size, repeat=True, drop_remainder=True):
+    per_process_batch_size = batch_size // jax.process_count()
     data_source = JsonDataSource(data_dir)
-    sampler = grain.samplers.IndexSampler(len(data_source), seed=0, shuffle=True, num_epochs=None if repeat else 1)
+    sampler = grain.samplers.IndexSampler(
+        len(data_source),
+        seed=0,
+        shuffle=True,
+        num_epochs=None if repeat else 1,
+        shard_options=grain.sharding.ShardByJaxProcess(drop_remainder=False)
+    )
     operations = [
         Parse(),
         Pad(),
-        grain.transforms.Batch(batch_size=batch_size, drop_remainder=drop_remainder)
+        grain.transforms.Batch(batch_size=per_process_batch_size, drop_remainder=drop_remainder)
     ]
     return grain.DataLoader(data_source=data_source, operations=operations, sampler=sampler)
