@@ -17,6 +17,8 @@ from evaluate import evaluate
 
 def main(cfg):
     jax.distributed.initialize()
+    if jax.process_index() == 0:
+        print(jax.devices())
     key = jax.random.key(cfg.seed)
     
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
