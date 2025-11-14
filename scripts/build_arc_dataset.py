@@ -6,6 +6,7 @@ import hashlib
 
 import jax
 import numpy as np
+from jax import numpy as jnp
 from tqdm import tqdm
 from sws import Config, run
 
@@ -63,40 +64,40 @@ def puzzle_hash(puzzle: dict):
 def inverse_d8_aug(puzzle_sample, op_idx):
     ops = [
         lambda x: x,
-        partial(np.rot90, k=-1),
-        partial(np.rot90, k=-2),
-        partial(np.rot90, k=-3),
-        np.fliplr,
-        np.flipud,
-        np.transpose,
-        lambda x: np.fliplr(np.rot90(x, k=1)),
+        partial(jnp.rot90, k=-1),
+        partial(jnp.rot90, k=-2),
+        partial(jnp.rot90, k=-3),
+        jnp.fliplr,
+        jnp.flipud,
+        jnp.transpose,
+        lambda x: jnp.fliplr(jnp.rot90(x, k=1)),
     ]
     return ops[op_idx](puzzle_sample)
 
 
 def inverse_colour_aug(puzzle_sample, colours):
-    colours = np.argsort(colours)
+    colours = jnp.argsort(colours)
     return colours[puzzle_sample]
 
 
 def crop(grid):
     # gpt5 made this
     H, W = grid.shape
-    safe = (grid != 10).astype(np.int32)
-    S = np.cumsum(np.cumsum(safe, 0), 1)
-    hs, ws = np.arange(1, H+1)[:, None], np.arange(1, W+1)[None, :]
+    safe = (grid != 10).astype(jnp.int32)
+    S = jnp.cumsum(jnp.cumsum(safe, 0), 1)
+    hs, ws = jnp.arange(1, H+1)[:, None], jnp.arange(1, W+1)[None, :]
     areas = hs * ws
-    ma = np.where(S == areas, areas, -1)
-    idx = np.argmax(ma)
+    ma = jnp.where(S == areas, areas, -1)
+    idx = jnp.argmax(ma)
     max_area = ma.reshape(-1)[idx]
 
     def no():
-        return np.array(0, np.int32), np.array(0, np.int32)
+        return jnp.array(0, jnp.int32), jnp.array(0, jnp.int32)
     def yes():
-        h_idx, w_idx = np.divmod(idx, W)
+        h_idx, w_idx = jnp.divmod(idx, W)
         return h_idx + 1, w_idx + 1
     
-    h, w = no() if max_area <= 0 else yes()
+    h, w = jax.lax.cond(max_area <= 0, no, yes)
     return grid[:h, :w]
 
 

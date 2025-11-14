@@ -16,7 +16,8 @@ from evaluate import evaluate
 # TODO: add eval loop (match augs in eval set)
 
 def main(cfg):
-    jax.distributed.initialize()
+    if cfg.parallel.n_devices > 1:
+        jax.distributed.initialize()
     if jax.process_index() == 0:
         print(jax.devices())
     key = jax.random.key(cfg.seed)
