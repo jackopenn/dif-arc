@@ -39,6 +39,9 @@ def main(cfg):
         mesh = jax.make_mesh((cfg.parallel.n_devices,), ("data",))
         jax.set_mesh(mesh)
 
+        if jax.process_index() == 0:
+            print(mesh)
+
         repl_sharding = NamedSharding(mesh, P())
         data_sharding = NamedSharding(mesh, P("data",))
 
@@ -51,7 +54,7 @@ def main(cfg):
         nnx.update(optimizer, sharded_optimizer_state)
 
         # shard_data = lambda data: jax.tree.map(lambda x: jax.device_put(x, data_sharding), data)
-        shard_data = lambda data: jax.tree.map(lambda x: jax.make_array_from_process_local_data(x, data_sharding), data)
+        shard_data = lambda data: jax.tree.map(lambda x: jax.make_array_from_process_local_data(data_sharding, x), data)
 
 
     @struct.dataclass
