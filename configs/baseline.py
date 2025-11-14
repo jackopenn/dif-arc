@@ -51,7 +51,7 @@ def get_config():
     cfg.data.data_dir = "data/arc-agi-1-aug-100"
     cfg.data.batch_size = 512
 
-    cfg.parallel.n_devices = 16
+    cfg.parallel.n_devices = 8
     
     cfg.wandb = True
     
