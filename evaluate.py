@@ -19,14 +19,14 @@ class Carry:
     halted: jax.Array
 
 
-def init_carry(batch, z_init, y_init, shard_data):
+def init_carry(batch, z_init, y_init)
     """initialize the carry with the initial data"""
     batch_size = batch['x'].shape[0]
     hidden_dim = z_init.shape[-1]
     z_init = jnp.broadcast_to(z_init, (batch_size, 916, hidden_dim))
     y_init = jnp.broadcast_to(y_init, (batch_size, 916, hidden_dim))
-    z_init = shard_data(z_init)
-    y_init = shard_data(y_init)
+    # z_init = shard_data(z_init)
+    # y_init = shard_data(y_init)
     return Carry(
         z=z_init,                                         # (batch_size, 901, hidden_dim)
         y=y_init,                                         # (batch_size, 901, hidden_dim)
@@ -93,7 +93,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         example_idxs = batch.pop("example_idx")
         
         batch = shard_data(batch)
-        carry = init_carry(batch, z_init, y_init, shard_data)
+        carry = init_carry(batch, z_init, y_init)
 
         y_preds = eval_step(model, carry, N_supervision, n, T)
         y_preds = np.array(y_preds.reshape(batch['x'].shape[0], 30, 30))
