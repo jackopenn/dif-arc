@@ -127,7 +127,9 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
                 preds[puzzle_idx][example_idx]['y_preds'][y_pred] = 1
             else:
                 preds[puzzle_idx][example_idx]['y_preds'][y_pred] += 1
-    print(preds[0])
+
+    print(preds[444])
+
     # passes = {
     #     "abcde1g7": {
     #         k_1: [True, False],
