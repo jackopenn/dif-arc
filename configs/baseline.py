@@ -57,6 +57,6 @@ def get_config():
     cfg.wandb = True
     
     cfg.eval.pass_ks = [1, 2, 5, 10, 100]
-    cfg.eval.eval_every = 10
+    cfg.eval.eval_every = 100
 
     return cfg
