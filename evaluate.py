@@ -19,7 +19,7 @@ class Carry:
     halted: jax.Array
 
 
-def init_carry(batch, z_init, y_init)
+def init_carry(batch, z_init, y_init):
     """initialize the carry with the initial data"""
     batch_size = batch['x'].shape[0]
     hidden_dim = z_init.shape[-1]
