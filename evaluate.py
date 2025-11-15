@@ -96,10 +96,11 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         carry = init_carry(batch, z_init, y_init)
 
         y_preds = eval_step(model, carry, N_supervision, n, T)
+
         y_preds = jax.experimental.multihost_utils.process_allgather(y_preds, tiled=True)
         y_trues = jax.experimental.multihost_utils.process_allgather(batch['y'], tiled=True)
         y_preds = np.array(y_preds.reshape(batch['x'].shape[0], 30, 30))
-        y_trues = np.array(batch['y'].reshape(batch['x'].shape[0], 30, 30))
+        y_trues = np.array(y_trues.reshape(batch['x'].shape[0], 30, 30))
         
         for i in range(batch['x'].shape[0]):
             # Unwrap scalars from batched fields
