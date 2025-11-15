@@ -26,7 +26,8 @@ class Parse(grain.transforms.Map):
             "d8_aug": np.asarray([record["d8_aug"]]),
             "example_idx": np.asarray([record["example_idx"]]),
             "aug_puzzle_idx": np.asarray([record["aug_puzzle_idx"]]),
-            "puzzle_id": np.asarray([record["puzzle_id"]]),
+            # "puzzle_id": np.asarray([record["puzzle_id"]]),
+            "puzzle_idx": np.asarray([record["puzzle_idx"]]),
         }
 
         

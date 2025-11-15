@@ -147,8 +147,7 @@ def main(cfg):
     key = jax.random.key(cfg.seed)
     aug_puzzles = []
     aug_puzzle_idx = 0
-    puzzle_idx = 0
-    for puzzle in tqdm(puzzles, desc="augmenting"):
+    for puzzle_idx, puzzle in enumerate(tqdm(puzzles, desc="augmenting")):
         # no augs
         # print(puzzle)
         base = puzzle.copy() 
