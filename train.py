@@ -224,7 +224,7 @@ def main(cfg):
 
     # init data loader
     train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.train_batch_size, repeat=True, drop_remainder=True, shard_by_jax_process=True)
-    val_data_loader_factory = lambda: get_data_loader(cfg.data.data_dir + "/test.jsonl", cfg.data.eval_batch_size, repeat=False, drop_remainder=True, shard_by_jax_process=False) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
+    val_data_loader_factory = lambda: get_data_loader(cfg.data.data_dir + "/test.jsonl", cfg.data.eval_batch_size, repeat=False, drop_remainder=True, shard_by_jax_process=True) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
@@ -253,8 +253,8 @@ def main(cfg):
         t0 = time.time()
         
         if step > 0 and step % cfg.eval.eval_every == 0:
+            val_metrics = evaluate(model, val_data_loader_factory, y_init, z_init, cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T, cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size)
             if jax.process_index() == 0:
-                val_metrics = evaluate(model, val_data_loader_factory, y_init, z_init, cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T, cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size)
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step})
 
 if __name__ == "__main__":
