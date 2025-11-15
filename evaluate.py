@@ -101,6 +101,11 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         y_trues = jax.experimental.multihost_utils.process_allgather(batch['y'], tiled=True)
         y_preds = np.array(y_preds.reshape(batch['x'].shape[0], 30, 30))
         y_trues = np.array(y_trues.reshape(batch['x'].shape[0], 30, 30))
+
+        puzzle_ids = jax.experimental.multihost_utils.process_allgather(puzzle_ids, tiled=True)
+        example_idxs = jax.experimental.multihost_utils.process_allgather(example_idxs, tiled=True)
+        d8_augs = jax.experimental.multihost_utils.process_allgather(d8_augs, tiled=True)
+        colour_augs = jax.experimental.multihost_utils.process_allgather(colour_augs, tiled=True)
         
         for i in range(batch['x'].shape[0]):
             # Unwrap scalars from batched fields
