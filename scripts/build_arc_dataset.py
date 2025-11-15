@@ -46,7 +46,7 @@ def colour_aug(puzzle_sample, colours):
 def grid_hash(grid: np.ndarray):
     assert grid.ndim == 2
 
-    buffer = [x.tobytes() for x in grid.shape]
+    buffer = [x.to_bytes() for x in grid.shape]
     buffer.append(grid.tobytes())
     
     return hashlib.sha256(b"".join(buffer)).hexdigest()
