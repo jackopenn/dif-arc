@@ -97,27 +97,35 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
 
         y_preds = y_preds.reshape(batch['x'].shape[0], 30, 30)
         y_trues = batch['y'].reshape(batch['x'].shape[0], 30, 30)
-            
-        for i in range(batch['x'].shape[0]):
-            puzzle_id = str(puzzle_ids[i][0])
-            example_idx = int(example_idxs[i][0])
-            d8_aug = int(d8_augs[i][0])
-            colour_aug = colour_augs[i]
-            y_pred = y_preds[i]
-            y_pred = crop(y_pred)
-            y_pred = grid_hash(inverse_d8_aug(inverse_colour_aug(y_pred, colour_aug), d8_aug))
-            y_true = y_trues[i]
-            y_true = crop(y_true)
-            y_true = grid_hash(inverse_d8_aug(inverse_colour_aug(y_true, colour_aug), d8_aug))
-            if puzzle_id not in preds:
-                preds[puzzle_id] = {}
-            if example_idx not in preds[puzzle_id]:
-                preds[puzzle_id][example_idx] = {"y_true": None, "y_preds": dict()}
-            preds[puzzle_id][example_idx]['y_true'] = y_true
-            if y_pred not in preds[puzzle_id][example_idx]['y_preds']:
-                preds[puzzle_id][example_idx]['y_preds'][y_pred] = 1
-            else:
-                preds[puzzle_id][example_idx]['y_preds'][y_pred] += 1
+
+        y_preds = jax.experimental.multihost_utils.process_allgather(y_preds)
+        y_trues = jax.experimental.multihost_utils.process_allgather(y_trues)
+        puzzle_ids = jax.experimental.multihost_utils.process_allgather(puzzle_ids)
+        example_idxs = jax.experimental.multihost_utils.process_allgather(example_idxs)
+        d8_augs = jax.experimental.multihost_utils.process_allgather(d8_augs)
+        colour_augs = jax.experimental.multihost_utils.process_allgather(colour_augs)
+
+        if jax.process_index() == 0:
+            for i in range(batch['x'].shape[0]):
+                puzzle_id = str(puzzle_ids[i][0])
+                example_idx = int(example_idxs[i][0])
+                d8_aug = int(d8_augs[i][0])
+                colour_aug = colour_augs[i]
+                y_pred = y_preds[i]
+                y_pred = crop(y_pred)
+                y_pred = grid_hash(inverse_d8_aug(inverse_colour_aug(y_pred, colour_aug), d8_aug))
+                y_true = y_trues[i]
+                y_true = crop(y_true)
+                y_true = grid_hash(inverse_d8_aug(inverse_colour_aug(y_true, colour_aug), d8_aug))
+                if puzzle_id not in preds:
+                    preds[puzzle_id] = {}
+                if example_idx not in preds[puzzle_id]:
+                    preds[puzzle_id][example_idx] = {"y_true": None, "y_preds": dict()}
+                preds[puzzle_id][example_idx]['y_true'] = y_true
+                if y_pred not in preds[puzzle_id][example_idx]['y_preds']:
+                    preds[puzzle_id][example_idx]['y_preds'][y_pred] = 1
+                else:
+                    preds[puzzle_id][example_idx]['y_preds'][y_pred] += 1
     
 
 
