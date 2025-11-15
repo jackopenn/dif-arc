@@ -233,7 +233,6 @@ def main(cfg):
 
     t0 = time.time()
     for step, batch in enumerate(train_data_loader):
-        batch.pop("puzzle_id")
         batch = shard_data(batch)
         if step == 0:
             carry = init_carry(batch, z_init, y_init)
