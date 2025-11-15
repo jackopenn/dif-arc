@@ -98,9 +98,6 @@ def crop(grid):
         return h_idx + 1, w_idx + 1
     
     h, w = jax.lax.cond(max_area <= 0, no, yes)
-    # Convert to host Python ints to avoid dynamic JAX slicing issues on TPU
-    h = int(jax.device_get(h))
-    w = int(jax.device_get(w))
     return grid[:h, :w]
 
 
