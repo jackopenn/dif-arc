@@ -37,7 +37,7 @@ def init_carry(batch, z_init, y_init, shard_data):
         halted=jnp.zeros((batch_size, ), dtype=jnp.bool_) # (batch_size,)
     )
   
-@nnx.jit(static_argnames=["N_supervision", "n", "T", "shard_data"])
+@nnx.jit(static_argnames=["N_supervision", "n", "T" ])
 def eval_step(model, carry, N_supervision, n, T):
     def latent_recursion(model, x, y, z, n):
         for _ in range(n):
