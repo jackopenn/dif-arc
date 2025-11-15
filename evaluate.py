@@ -2,6 +2,7 @@ from math import ceil
 
 import jax
 from jax import numpy as jnp
+import numpy as np
 from flax import nnx, struct
 from tqdm import tqdm
 
@@ -24,8 +25,8 @@ def init_carry(batch, z_init, y_init, shard_data):
     hidden_dim = z_init.shape[-1]
     z_init = jnp.broadcast_to(z_init, (batch_size, 916, hidden_dim))
     y_init = jnp.broadcast_to(y_init, (batch_size, 916, hidden_dim))
-    # z_init = shard_data(z_init)
-    # y_init = shard_data(y_init)
+    z_init = shard_data(z_init)
+    y_init = shard_data(y_init)
     return Carry(
         z=z_init,                                         # (batch_size, 901, hidden_dim)
         y=y_init,                                         # (batch_size, 901, hidden_dim)
@@ -36,14 +37,15 @@ def init_carry(batch, z_init, y_init, shard_data):
         halted=jnp.zeros((batch_size, ), dtype=jnp.bool_) # (batch_size,)
     )
   
-@nnx.jit(static_argnames=["N_supervision", "n", "T"])
-def eval_step(model, carry, y_init, z_init, N_supervision, n, T):
+@nnx.jit(static_argnames=["N_supervision", "n", "T", "shard_data"])
+def eval_step(model, batch, y_init, z_init, N_supervision, n, T, shard_data):
     def latent_recursion(model, x, y, z, n):
         for _ in range(n):
             z = model(x, y, z)
         y = model(y, z)
         return y, z
 
+    carry = init_carry(batch, z_init, y_init, shard_data)
     x = model.input_embedding(carry.x_input, carry.aug_puzzle_idx)
     y, z = carry.y, carry.z
     for _ in range(N_supervision):
@@ -92,79 +94,70 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         example_idxs = batch.pop("example_idx")
 
         batch = shard_data(batch)
-        carry = init_carry(batch, z_init, y_init, shard_data)
-        y_preds = eval_step(model, carry, y_init, z_init, N_supervision, n, T)
 
-        y_preds = y_preds.reshape(batch['x'].shape[0], 30, 30)
-        y_trues = batch['y'].reshape(batch['x'].shape[0], 30, 30)
+        y_preds = eval_step(model, batch, y_init, z_init, N_supervision, n, T, shard_data)
+        y_preds = np.array(y_preds.reshape(batch['x'].shape[0], 30, 30))
+        y_trues = np.array(batch['y'].reshape(batch['x'].shape[0], 30, 30))
+        
+        for i in range(batch['x'].shape[0]):
+            # Unwrap scalars from batched fields
+            puzzle_id = str(puzzle_ids[i][0])
+            example_idx = int(example_idxs[i][0])
+            d8_aug = int(d8_augs[i][0])
+            colour_aug = colour_augs[i]
+            y_pred = y_preds[i]
+            
+            y_pred = crop(y_pred)
+            y_pred = grid_hash(inverse_d8_aug(inverse_colour_aug(y_pred, colour_aug), d8_aug))
 
-        y_preds = jax.experimental.multihost_utils.process_allgather(y_preds, tiled=True)
-        y_trues = jax.experimental.multihost_utils.process_allgather(y_trues, tiled=True)
-        puzzle_ids = jax.experimental.multihost_utils.process_allgather(puzzle_ids, tiled=True)
-        example_idxs = jax.experimental.multihost_utils.process_allgather(example_idxs, tiled=True)
-        d8_augs = jax.experimental.multihost_utils.process_allgather(d8_augs, tiled=True)
-        colour_augs = jax.experimental.multihost_utils.process_allgather(colour_augs, tiled=True)
-
-        if jax.process_index() == 0:
-            for i in range(batch['x'].shape[0]):
-                puzzle_id = str(puzzle_ids[i][0])
-                example_idx = int(example_idxs[i][0])
-                d8_aug = int(d8_augs[i][0])
-                colour_aug = colour_augs[i]
-                y_pred = y_preds[i]
-                y_pred = crop(y_pred)
-                y_pred = grid_hash(inverse_d8_aug(inverse_colour_aug(y_pred, colour_aug), d8_aug))
+            if puzzle_id not in preds:
+                preds[puzzle_id] = {}
+            if example_idx not in preds[puzzle_id]:
+                preds[puzzle_id][example_idx] = {"y_true": None, "y_preds": dict()}
                 y_true = y_trues[i]
                 y_true = crop(y_true)
                 y_true = grid_hash(inverse_d8_aug(inverse_colour_aug(y_true, colour_aug), d8_aug))
-                if puzzle_id not in preds:
-                    preds[puzzle_id] = {}
-                if example_idx not in preds[puzzle_id]:
-                    preds[puzzle_id][example_idx] = {"y_true": None, "y_preds": dict()}
                 preds[puzzle_id][example_idx]['y_true'] = y_true
-                if y_pred not in preds[puzzle_id][example_idx]['y_preds']:
-                    preds[puzzle_id][example_idx]['y_preds'][y_pred] = 1
-                else:
-                    preds[puzzle_id][example_idx]['y_preds'][y_pred] += 1
+
+            if y_pred not in preds[puzzle_id][example_idx]['y_preds']:
+                preds[puzzle_id][example_idx]['y_preds'][y_pred] = 1
+            else:
+                preds[puzzle_id][example_idx]['y_preds'][y_pred] += 1
+
+    # passes = {
+    #     "abcde1g7": {
+    #         k_1: [True, False],
+    #         k_2: [True, False],
+    #         ...
+    #         k_n: [True, False]
+    #     }
+    # }
+    passes = {}
+    for puzzle_id, data in tqdm(preds.items(), desc="computing passes"):
+        for example_idx, example in data.items():
+            y_true = example['y_true']
+            for k in pass_ks:
+                top_k_preds = get_top_k_preds(example['y_preds'], k)
+                if puzzle_id not in passes:
+                    passes[puzzle_id] = {}
+                if k not in passes[puzzle_id]:
+                    passes[puzzle_id][k] = []
+                passes[puzzle_id][k].append(y_true in top_k_preds)
+                
+    # passes_reduced = {
+    #     k_1: n_true,
+    #     k_2: n_true,
+    #     ...
+    #     k_n: n_true
+    # }
+    passes_reduced = {}
+    for puzzle_id, ks in tqdm(passes.items(), desc="computing passes reduced"):
+        for k, vs in ks.items():
+            passes_reduced[k] = passes_reduced.get(k, 0) + int(all(vs))
+
+    print(passes_reduced)
     
-
-
-    preds = jax.experimental.multihost_utils.process_allgather(preds)
-    if jax.process_index() == 0:
-        # passes = {
-        #     "abcde1g7": {
-        #         k_1: [True, False],
-        #         k_2: [True, False],
-        #         ...
-        #         k_n: [True, False]
-        #     }
-        # }
-        passes = {}
-        for puzzle_id, data in tqdm(preds.items(), desc="computing passes"):
-            for example_idx, example in data.items():
-                y_true = example['y_true']
-                for k in pass_ks:
-                    top_k_preds = get_top_k_preds(example['y_preds'], k)
-                    if puzzle_id not in passes:
-                        passes[puzzle_id] = {}
-                    if k not in passes[puzzle_id]:
-                        passes[puzzle_id][k] = []
-                    passes[puzzle_id][k].append(y_true in top_k_preds)
-                    
-        # passes_reduced = {
-        #     k_1: n_true,
-        #     k_2: n_true,
-        #     ...
-        #     k_n: n_true
-        # }
-        passes_reduced = {}
-        for puzzle_id, ks in tqdm(passes.items(), desc="computing passes reduced"):
-            for k, vs in ks.items():
-                passes_reduced[k] = passes_reduced.get(k, 0) + int(all(vs))
-
-        print(passes_reduced)
-        
-        n_puzzles = len(passes)
-        passes_reduced = {f"pass_{k}": n_true / n_puzzles for k, n_true in passes_reduced.items()}
+    n_puzzles = len(passes)
+    passes_reduced = {f"pass_{k}": n_true / n_puzzles for k, n_true in passes_reduced.items()}
 
     return passes_reduced

@@ -50,7 +50,7 @@ class Pad(grain.transforms.Map):
         }
     
 
-def get_data_loader(data_dir, batch_size, repeat=True, drop_remainder=True):
+def get_data_loader(data_dir, batch_size, repeat=True, drop_remainder=True,shard_by_jax_process=False):
     per_process_batch_size = batch_size // jax.process_count()
     data_source = JsonDataSource(data_dir)
     sampler = grain.samplers.IndexSampler(
@@ -58,7 +58,7 @@ def get_data_loader(data_dir, batch_size, repeat=True, drop_remainder=True):
         seed=0,
         shuffle=True,
         num_epochs=None if repeat else 1,
-        shard_options=grain.sharding.ShardByJaxProcess(drop_remainder=False)
+        shard_options=grain.sharding.ShardByJaxProcess(drop_remainder=False) if shard_by_jax_process else None
     )
     operations = [
         Parse(),
