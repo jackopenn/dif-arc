@@ -91,7 +91,8 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         colour_augs = batch.pop("colour_aug")
         d8_augs = batch.pop("d8_aug")
         example_idxs = batch.pop("example_idx")
-
+        
+        batch = shard_data(batch)
         carry = init_carry(batch, z_init, y_init, shard_data)
 
         y_preds = eval_step(model, carry, N_supervision, n, T)
