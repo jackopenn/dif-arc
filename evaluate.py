@@ -127,7 +127,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
                 preds[puzzle_idx][example_idx]['y_preds'][y_pred] = 1
             else:
                 preds[puzzle_idx][example_idx]['y_preds'][y_pred] += 1
-
+    print(preds[0])
     # passes = {
     #     "abcde1g7": {
     #         k_1: [True, False],
@@ -142,7 +142,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
             y_true = example['y_true']
             for k in pass_ks:
                 top_k_preds = get_top_k_preds(example['y_preds'], k)
-                if puzzle_id not in passes:
+                if puzzle_idx not in passes:
                     passes[puzzle_idx] = {}
                 if k not in passes[puzzle_idx]:
                     passes[puzzle_idx][k] = []
@@ -159,8 +159,6 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         for k, vs in ks.items():
             passes_reduced[k] = passes_reduced.get(k, 0) + int(all(vs))
 
-    print(passes_reduced)
-    
     n_puzzles = len(passes)
     passes_reduced = {f"pass_{k}": n_true / n_puzzles for k, n_true in passes_reduced.items()}
 
