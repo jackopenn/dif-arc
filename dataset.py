@@ -58,7 +58,7 @@ def get_data_loader(data_dir, batch_size, repeat=True, drop_remainder=True,shard
         seed=0,
         shuffle=True,
         num_epochs=None if repeat else 1,
-        shard_options=grain.sharding.ShardByJaxProcess(drop_remainder=False) if shard_by_jax_process else None
+        shard_options=grain.sharding.ShardByJaxProcess(drop_remainder=False) if shard_by_jax_process else grain.sharding.NoSharding()
     )
     operations = [
         Parse(),

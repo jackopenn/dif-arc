@@ -210,11 +210,11 @@ def main(cfg):
     if jax.process_index() == 0:
         if cfg.wandb:
             wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
-            train_logger = MetricLogger(cfg.data.batch_size, prefix="train", buffer=True, wandb=wandb)
-            val_logger = MetricLogger(cfg.data.batch_size, prefix="val", buffer=False, wandb=wandb)
+            train_logger = MetricLogger(cfg.data.train_batch_size, prefix="train", buffer=True, wandb=wandb)
+            val_logger = MetricLogger(cfg.data.eval_batch_size, prefix="val", buffer=False, wandb=wandb)
         else:
-            train_logger = MetricLogger(cfg.data.batch_size, prefix="train", buffer=True, wandb=None)
-            val_logger = MetricLogger(cfg.data.batch_size, prefix="val", buffer=False, wandb=None)
+            train_logger = MetricLogger(cfg.data.train_batch_size, prefix="train", buffer=True, wandb=None)
+            val_logger = MetricLogger(cfg.data.eval_batch_size, prefix="val", buffer=False, wandb=None)
         
     # init latents
     key, y_key, z_key = jax.random.split(key, 3)
@@ -223,8 +223,8 @@ def main(cfg):
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
 
     # init data loader
-    train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.train_batch_size, repeat=True, drop_remainder=True)
-    val_data_loader_factory = lambda: get_data_loader(cfg.data.data_dir + "/test.jsonl", cfg.data.eval_batch_size, repeat=False, drop_remainder=True) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
+    train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.train_batch_size, repeat=True, drop_remainder=True, shard_by_jax_process=True)
+    val_data_loader_factory = lambda: get_data_loader(cfg.data.data_dir + "/test.jsonl", cfg.data.eval_batch_size, repeat=False, drop_remainder=True, shard_by_jax_process=False) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
