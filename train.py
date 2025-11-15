@@ -254,7 +254,7 @@ def main(cfg):
         
         if step > 0 and step % cfg.eval.eval_every == 0:
             if jax.process_index() == 0:
-                val_metrics = evaluate(model, val_data_loader_factory, y_init, z_init, cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T, cfg.eval.pass_ks, shard_data, cfg.data.batch_size)
+                val_metrics = evaluate(model, val_data_loader_factory, y_init, z_init, cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T, cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size)
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step})
 
 if __name__ == "__main__":
