@@ -98,12 +98,12 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         y_preds = y_preds.reshape(batch['x'].shape[0], 30, 30)
         y_trues = batch['y'].reshape(batch['x'].shape[0], 30, 30)
 
-        y_preds = jax.experimental.multihost_utils.process_allgather(y_preds)
-        y_trues = jax.experimental.multihost_utils.process_allgather(y_trues)
-        puzzle_ids = jax.experimental.multihost_utils.process_allgather(puzzle_ids)
-        example_idxs = jax.experimental.multihost_utils.process_allgather(example_idxs)
-        d8_augs = jax.experimental.multihost_utils.process_allgather(d8_augs)
-        colour_augs = jax.experimental.multihost_utils.process_allgather(colour_augs)
+        y_preds = jax.experimental.multihost_utils.process_allgather(y_preds, tiled=True)
+        y_trues = jax.experimental.multihost_utils.process_allgather(y_trues, tiled=True)
+        puzzle_ids = jax.experimental.multihost_utils.process_allgather(puzzle_ids, tiled=True)
+        example_idxs = jax.experimental.multihost_utils.process_allgather(example_idxs, tiled=True)
+        d8_augs = jax.experimental.multihost_utils.process_allgather(d8_augs, tiled=True)
+        colour_augs = jax.experimental.multihost_utils.process_allgather(colour_augs, tiled=True)
 
         if jax.process_index() == 0:
             for i in range(batch['x'].shape[0]):
