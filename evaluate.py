@@ -38,14 +38,13 @@ def init_carry(batch, z_init, y_init, shard_data):
     )
   
 @nnx.jit(static_argnames=["N_supervision", "n", "T", "shard_data"])
-def eval_step(model, batch, y_init, z_init, N_supervision, n, T, shard_data):
+def eval_step(model, carry, N_supervision, n, T):
     def latent_recursion(model, x, y, z, n):
         for _ in range(n):
             z = model(x, y, z)
         y = model(y, z)
         return y, z
 
-    carry = init_carry(batch, z_init, y_init, shard_data)
     x = model.input_embedding(carry.x_input, carry.aug_puzzle_idx)
     y, z = carry.y, carry.z
     for _ in range(N_supervision):
@@ -93,9 +92,9 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         d8_augs = batch.pop("d8_aug")
         example_idxs = batch.pop("example_idx")
 
-        batch = shard_data(batch)
+        carry = init_carry(batch, z_init, y_init, shard_data)
 
-        y_preds = eval_step(model, batch, y_init, z_init, N_supervision, n, T, shard_data)
+        y_preds = eval_step(model, carry, N_supervision, n, T)
         y_preds = np.array(y_preds.reshape(batch['x'].shape[0], 30, 30))
         y_trues = np.array(batch['y'].reshape(batch['x'].shape[0], 30, 30))
         
