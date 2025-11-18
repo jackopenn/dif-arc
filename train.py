@@ -224,7 +224,7 @@ def main(cfg):
 
     # init data loader
     train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.train_batch_size, repeat=True, drop_remainder=True, shard_by_jax_process=True)
-    val_data_loader_factory = lambda: get_data_loader(cfg.data.data_dir + "/test.jsonl", cfg.data.eval_batch_size, repeat=False, drop_remainder=True, shard_by_jax_process=True) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
+    val_data_loader_factory = lambda: get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.eval_batch_size, repeat=False, drop_remainder=True, shard_by_jax_process=True) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
