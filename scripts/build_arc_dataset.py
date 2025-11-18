@@ -82,7 +82,7 @@ def inverse_colour_aug(puzzle_sample, colours):
 def crop(grid):
     # gpt5 made this
     H, W = grid.shape
-    safe = (grid != 10).astype(np.int32)
+    safe = (grid < 10).astype(np.int32)
     S = np.cumsum(np.cumsum(safe, 0), 1)
     hs, ws = np.arange(1, H+1)[:, None], np.arange(1, W+1)[None, :]
     areas = hs * ws

@@ -11,7 +11,7 @@ def get_config():
     cfg = Config()
     cfg.seed = 69420
     
-    cfg.model.vocab_size = 10 + 1 # +1 for padding
+    cfg.model.vocab_size = 12 # 10 colours, 1 border, 1 padding
     cfg.model.hidden_dim = 32
     cfg.model.intermediate_dim = lambda: 1 * cfg.model.hidden_dim
     cfg.model.num_layers = 1
@@ -49,7 +49,8 @@ def get_config():
     cfg.max_steps = 100_000
 
     cfg.data.data_dir = "data/arc-agi-1-aug-100"
-    cfg.data.batch_size = 4
+    cfg.data.train_batch_size = 4
+    cfg.data.eval_batch_size = 4
 
     cfg.parallel.n_devices = 1
 

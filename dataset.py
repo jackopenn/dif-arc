@@ -32,22 +32,36 @@ class Parse(grain.transforms.Map):
 
         
 class Pad(grain.transforms.Map):
-    def __init__(self, max_grid_size = 30):
+    def __init__(self, max_grid_size=30):
         self.max_grid_size = max_grid_size
         
-    def _pad(self, x):
+    def _pad(self, x, size=None, pad_value=11):
+        if size is None:
+            vertical_padding = self.max_grid_size - x.shape[0]
+            horizontal_padding = self.max_grid_size - x.shape[1]
+        else:
+            vertical_padding = size if x.shape[0] < self.max_grid_size - x.shape[0] else 0
+            horizontal_padding = size if x.shape[1] < self.max_grid_size - x.shape[1] else 0
         return np.pad(
             x,
-            pad_width=((0, self.max_grid_size - x.shape[0]), (0, self.max_grid_size - x.shape[1])),
+            pad_width=((0, vertical_padding), (0, horizontal_padding)),
             mode="constant",
-            constant_values=10
+            constant_values=pad_value
         )
     
     def map(self, record):
         return {
             **record,
-            "x": self._pad(record["x"]).flatten(),
-            "y": self._pad(record["y"]).flatten(),
+            "x": self._pad(
+                self._pad(record["x"], size=1, pad_value=10),
+                size=None,
+                pad_value=11
+                ).flatten(),
+            "y": self._pad(
+                self._pad(record["y"], size=1, pad_value=10),
+                size=None,
+                pad_value=11
+                ).flatten(),
         }
     
 
