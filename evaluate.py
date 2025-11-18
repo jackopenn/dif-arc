@@ -52,7 +52,11 @@ def eval_step(model, carry, N_supervision, n, T):
             y, z = latent_recursion(model, x, y, z, n)
     y_logits = model.output_head(y)
     y_preds = jnp.argmax(y_logits, axis=-1)
-    return y_preds
+    cell_correct = y_preds == carry.y_true
+    puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 10)
+    cell_acc = cell_correct.mean(where=carry.y_true < 10)
+    puzzle_acc = puzzle_correct.mean()
+    return y_preds, cell_acc, puzzle_acc
 
 
 def get_top_k_preds(example_preds, k):
@@ -85,13 +89,19 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
     #     }
     # }
     preds = {}
+    cell_accs = jnp.array([0.0])
+    puzzle_accs = jnp.array([0.0])
     data_loader = data_loader_factory()
-    for batch in tqdm(data_loader, desc="evaluating", total=ceil(len(data_loader._data_source) / batch_size)):
+    n_samples = ceil(len(data_loader._data_source) / batch_size)
+    for batch in tqdm(data_loader, desc="evaluating", total=n_samples):
         batch = shard_data(batch)
         
         carry = init_carry(batch, z_init, y_init)
 
-        y_preds = eval_step(model, carry, N_supervision, n, T)
+        y_preds, cell_acc, puzzle_acc = eval_step(model, carry, N_supervision, n, T)
+        
+        cell_accs += cell_acc
+        puzzle_accs += puzzle_acc
 
         y_preds = jax.experimental.multihost_utils.process_allgather(y_preds, tiled=True)
         y_trues = jax.experimental.multihost_utils.process_allgather(batch['y'], tiled=True)
@@ -164,5 +174,10 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
 
     n_puzzles = len(passes)
     passes_reduced = {f"pass_{k}": n_true / n_puzzles for k, n_true in passes_reduced.items()}
-
-    return passes_reduced
+    
+    metrics = {
+            **passes_reduced,
+            "cell_acc": cell_accs / n_samples,
+            "puzzle_acc": puzzle_accs / n_samples,
+    }
+    return metrics
