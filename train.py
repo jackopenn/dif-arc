@@ -1,4 +1,5 @@
 import time
+from math import ceil
 import jax
 import jax.numpy as jnp
 from jax.sharding import NamedSharding, PartitionSpec as P
@@ -13,7 +14,6 @@ from utils import MetricLogger
 from evaluate import evaluate
 
 # TODO: log epochs
-# TODO: add eval loop (match augs in eval set)
 
 def main(cfg):
     if cfg.parallel.n_devices > 1:
@@ -56,7 +56,6 @@ def main(cfg):
         sharded_optimizer_state = jax.lax.with_sharding_constraint(optimizer_state, repl_sharding)
         nnx.update(optimizer, sharded_optimizer_state)
 
-        # shard_data = lambda data: jax.tree.map(lambda x: jax.device_put(x, data_sharding), data)
         shard_data = lambda data: jax.tree.map(lambda x: jax.make_array_from_process_local_data(data_sharding, x), data)
 
 
@@ -82,8 +81,8 @@ def main(cfg):
             z_init = jax.device_put(z_init, data_sharding)
             y_init = jax.device_put(y_init, data_sharding)
         return Carry(
-            z=z_init,                                         # (batch_size, 901, hidden_dim)
-            y=y_init,                                         # (batch_size, 901, hidden_dim)
+            z=z_init,                                         # (batch_size, seq_len, hidden_dim)
+            y=y_init,                                         # (batch_size, seq_len, hidden_dim)
             x_input=batch['x'],                               # (batch_size, 900)
             aug_puzzle_idx=batch['aug_puzzle_idx'],           # (batch_size,)
             y_true=batch['y'],                                # (batch_size, 900)
@@ -113,7 +112,10 @@ def main(cfg):
             halted = jnp.where(q_logits.reshape(-1) > 0, True, halted)
         if halt_explore_prob > 0:
             key, subkey, subkey2 = jax.random.split(key, 3)
-            min_halt_steps = (jax.random.uniform(subkey, halted.shape) < halt_explore_prob) * jax.random.randint(subkey2, step.shape, minval=2, maxval=N_supervision + 1)
+            min_halt_steps = (
+                (jax.random.uniform(subkey, halted.shape) < halt_explore_prob)
+                * jax.random.randint(subkey2, step.shape, minval=2, maxval=N_supervision + 1)
+            )
             halted = halted & (step >= min_halt_steps)
         return Carry(
             z=z,
@@ -231,12 +233,18 @@ def main(cfg):
     profiler_options = jax.profiler.ProfileOptions()
     profiler_options.host_tracer_level = 3
     trace_dir = "profile"
+    
+    steps_per_epoch = ceil(len(train_data_loader._data_source) / cfg.data.train_batch_size)
+    print(f"{steps_per_epoch=}")
+    epoch = 0
 
-    t0 = time.time()
+    t0 = time.perf_counter()
     for step, batch in enumerate(train_data_loader):
         batch = shard_data(batch)
+
         if step == 0:
             carry = init_carry(batch, z_init, y_init)
+
         if step == 10: 
             jax.profiler.start_trace(trace_dir, profiler_options=profiler_options)
         with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
@@ -247,15 +255,24 @@ def main(cfg):
             )
         if step == 15:
             jax.profiler.stop_trace()
-        step_time = time.time() - t0
+
+        step_time = time.perf_counter() - t0
+        t0 = time.perf_counter()
+        
         if jax.process_index() == 0:
-            train_logger.log({**metrics, "step_time": step_time, "step": step})
-        t0 = time.time()
+            train_logger.log({**metrics, "step_time": step_time, "step": step, "epoch": epoch})
         
         if step > 0 and step % cfg.eval.eval_every == 0:
-            val_metrics = evaluate(model, val_data_loader_factory, y_init, z_init, cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T, cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size)
+            val_metrics = evaluate(
+                model, val_data_loader_factory, y_init, z_init,
+                cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
+                cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size
+            )
             if jax.process_index() == 0:
-                val_logger.log({**val_metrics, "step_time": step_time, "step": step})
+                val_logger.log({**val_metrics, "step_time": step_time, "step": step, "epoch": epoch})
+
+        if step > 0 and step % steps_per_epoch == 0:
+            epoch += 1
 
 if __name__ == "__main__":
     run(main)
