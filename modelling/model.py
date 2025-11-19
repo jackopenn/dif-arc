@@ -26,7 +26,7 @@ class Model(nnx.Module):
         self.puzzle_emb_len = puzzle_emb_len
         if not rope_theta:
             self.pos_embed = nnx.Embed(
-                9016,
+                900 + puzzle_emb_len,
                 hidden_dim,
                 dtype=jnp.bfloat16,
                 embedding_init=nnx.initializers.truncated_normal(
