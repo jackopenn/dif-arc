@@ -54,9 +54,10 @@ def get_config():
 
     cfg.parallel.n_devices = 1
 
-    cfg.wandb = False
+    cfg.wandb = True
     
     cfg.eval.pass_ks = [1, 2, 5, 10, 100, 1000]
-    cfg.eval.eval_every = 10
+    cfg.eval.eval_every = 1000
+    cfg.log_every = 9
 
     return cfg

@@ -23,7 +23,7 @@ def get_config():
     cfg.model.use_bias = False
     cfg.model.rope_theta = 10000 # none = learned
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
-    cfg.model.puzzle_emb_len = 16
+    cfg.model.puzzle_emb_len = 1
 
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 6
@@ -49,14 +49,15 @@ def get_config():
     cfg.max_steps = 100_000
 
     cfg.data.data_dir = "data/arc-agi-1-aug-100"
-    cfg.data.train_batch_size = 512
-    cfg.data.eval_batch_size = 512
+    cfg.data.train_batch_size = 1024
+    cfg.data.eval_batch_size = 1024
 
-    cfg.parallel.n_devices = 8
+    cfg.parallel.n_devices = 16
     
     cfg.wandb = True
     
     cfg.eval.pass_ks = [1, 2, 5, 10, 100]
     cfg.eval.eval_every = 10_000
+    cfg.log_every = lambda: cfg.eval.eval_every
 
     return cfg

@@ -1,5 +1,6 @@
 import time
 from math import ceil
+import os
 import jax
 import jax.numpy as jnp
 from jax.sharding import NamedSharding, PartitionSpec as P
@@ -7,13 +8,13 @@ from flax import nnx, struct
 import optax
 from sws import run
 import wandb
+import orbax.checkpoint as ocp
 
 from dataset import get_data_loader
 from modelling.model import Model
 from utils import MetricLogger
 from evaluate import evaluate
 
-# TODO: log epochs
 
 def main(cfg):
     if cfg.parallel.n_devices > 1:
@@ -43,7 +44,7 @@ def main(cfg):
         jax.set_mesh(mesh)
 
         if jax.process_index() == 0:
-            print(mesh)
+            print(f"{mesh=}")
 
         repl_sharding = NamedSharding(mesh, P())
         data_sharding = NamedSharding(mesh, P("data",))
@@ -162,7 +163,7 @@ def main(cfg):
             ).mean()
         else:
             q_loss = 0
-        loss = y_loss + 0.5*q_loss
+        loss = y_loss + 0.5 * q_loss # 0.5* why?
         return loss, (y, z, y_loss, q_loss, y_preds, q_logits)
     
     
@@ -186,7 +187,7 @@ def main(cfg):
         # update halt flag
         carry, key = post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, key)
 
-        # compute metrics (10 = padding)
+        # compute metrics (11 = padding)
         cell_correct = y_preds == carry.y_true # (batch_size, 900)
         puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 11)
         cell_acc = cell_correct.mean(where=(carry.y_true < 11) & (carry.halted[..., jnp.newaxis]))
@@ -229,6 +230,17 @@ def main(cfg):
     train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.train_batch_size, repeat=True, drop_remainder=True, shard_by_jax_process=True)
     val_data_loader_factory = lambda: get_data_loader(cfg.data.data_dir + "/test.jsonl", cfg.data.eval_batch_size, repeat=False, drop_remainder=True, shard_by_jax_process=True) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
+    # init checkpoint manager
+    ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{os.getcwd()}/checkpoints/')
+    ckpt_options = ocp.CheckpointManagerOptions(
+        max_to_keep=1,
+        best_fn = lambda x: x,
+        best_mode="max",
+        cleanup_tmp_directories=True,
+        enable_async_checkpointing=False # otherwise wandb logging fails
+    )
+    ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
+
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
     profiler_options.host_tracer_level = 3
@@ -245,7 +257,7 @@ def main(cfg):
         if step == 0:
             carry = init_carry(batch, z_init, y_init)
 
-        if step == 10: 
+        if jax.process_index() == 0 and step == 10: 
             jax.profiler.start_trace(trace_dir, profiler_options=profiler_options)
         with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
             carry, metrics, key = train_step(
@@ -253,8 +265,9 @@ def main(cfg):
                 cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
                 cfg.recursion.halt_explore_prob, key
             )
-        if step == 15:
+        if jax.process_index() == 0 and step == 15:
             jax.profiler.stop_trace()
+            wandb.log_artifact(f"{os.getcwd()}/{trace_dir}/", name=f"run_{wandb.run.id}_trace", type="trace")
 
         step_time = time.perf_counter() - t0
         t0 = time.perf_counter()
@@ -270,6 +283,17 @@ def main(cfg):
             )
             if jax.process_index() == 0:
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step, "epoch": epoch})
+        
+        if step > 0 and step % cfg.log_every == 0:
+            jax.experimental.multihost_utils.sync_global_devices("barrier")
+            if jax.process_index() == 0:
+                _, state = nnx.split(model)
+                try:
+                    checkpoint_metric = val_metrics["puzzle_acc"]
+                except UnboundLocalError: # if checkpoint_every < eval_every, then val_metrics is not defined
+                    checkpoint_metric = 0
+                ckpt_mngr.save(step, metrics=checkpoint_metric, args=ocp.args.StandardSave(state))
+                wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
 
         if step > 0 and step % steps_per_epoch == 0:
             epoch += 1
