@@ -30,42 +30,52 @@ class Parse(grain.transforms.Map):
             "puzzle_idx": np.asarray([record["puzzle_idx"]]),
         }
 
-        
-class Pad(grain.transforms.Map):
-    def __init__(self, max_grid_size=30):
+
+class TranslateAndPad(grain.transforms.RandomMap):
+    def __init__(self, translate, max_grid_size=30):
+        self.translate = translate
         self.max_grid_size = max_grid_size
         
-    def _pad(self, x, size=None, pad_value=11):
-        if size is None:
-            vertical_padding = self.max_grid_size - x.shape[0]
-            horizontal_padding = self.max_grid_size - x.shape[1]
-        else:
-            vertical_padding = size if x.shape[0] < self.max_grid_size - x.shape[0] else 0
-            horizontal_padding = size if x.shape[1] < self.max_grid_size - x.shape[1] else 0
+    def _pad(self, x, pad_width, pad_value):
         return np.pad(
             x,
-            pad_width=((0, vertical_padding), (0, horizontal_padding)),
+            pad_width=pad_width,
             mode="constant",
             constant_values=pad_value
         )
     
-    def map(self, record):
+    def random_map(self, record, rng):
+        x, y = record["x"], record["y"]
+
+        # top left corner
+        if self.translate:
+            pad_c = rng.integers(0, self.max_grid_size - max(x.shape[0], y.shape[0]) + 1)
+            pad_r = rng.integers(0, self.max_grid_size - max(x.shape[1], y.shape[1]) + 1)
+        else:
+            pad_c = 0
+            pad_r = 0
+        
+        padded_x = self._pad(x, ((pad_c, self.max_grid_size - x.shape[0] - pad_c), (pad_r, self.max_grid_size - x.shape[1] - pad_r)), 11)
+        padded_y = self._pad(y, ((pad_c, self.max_grid_size - y.shape[0] - pad_c), (pad_r, self.max_grid_size - y.shape[1] - pad_r)), 11)
+
+        border_c = pad_c + x.shape[0]
+        border_r = pad_r + x.shape[1]
+
+        if border_c < self.max_grid_size:
+            padded_x[border_c, pad_r:border_r] = 10
+            padded_y[border_c, pad_r:border_r] = 10
+        if border_r < self.max_grid_size:
+            padded_x[pad_c:border_c, border_r] = 10
+            padded_y[pad_c:border_c, border_r] = 10
+    
         return {
             **record,
-            "x": self._pad(
-                self._pad(record["x"], size=1, pad_value=10),
-                size=None,
-                pad_value=11
-                ).flatten(),
-            "y": self._pad(
-                self._pad(record["y"], size=1, pad_value=10),
-                size=None,
-                pad_value=11
-                ).flatten(),
+            "x": padded_x.flatten(),
+            "y": padded_y.flatten(),
         }
     
 
-def get_data_loader(data_dir, batch_size, repeat=True, drop_remainder=True,shard_by_jax_process=False):
+def get_data_loader(data_dir, batch_size, translate, repeat=True, drop_remainder=True,shard_by_jax_process=False):
     per_process_batch_size = batch_size // jax.process_count()
     data_source = JsonDataSource(data_dir)
     sampler = grain.samplers.IndexSampler(
@@ -77,7 +87,7 @@ def get_data_loader(data_dir, batch_size, repeat=True, drop_remainder=True,shard
     )
     operations = [
         Parse(),
-        Pad(),
+        TranslateAndPad(translate=translate),
         grain.transforms.Batch(batch_size=per_process_batch_size, drop_remainder=drop_remainder)
     ]
     return grain.DataLoader(data_source=data_source, operations=operations, sampler=sampler)

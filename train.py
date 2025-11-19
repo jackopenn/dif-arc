@@ -227,8 +227,8 @@ def main(cfg):
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
 
     # init data loader
-    train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.train_batch_size, repeat=True, drop_remainder=True, shard_by_jax_process=True)
-    val_data_loader_factory = lambda: get_data_loader(cfg.data.data_dir + "/test.jsonl", cfg.data.eval_batch_size, repeat=False, drop_remainder=True, shard_by_jax_process=True) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
+    train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.train_batch_size, translate=cfg.data.translate, repeat=True, drop_remainder=True, shard_by_jax_process=True)
+    val_data_loader_factory = lambda: get_data_loader(cfg.data.data_dir + "/test.jsonl", cfg.data.eval_batch_size, translate=False,repeat=False, drop_remainder=True, shard_by_jax_process=True) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
     # init checkpoint manager
     ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{os.getcwd()}/checkpoints/')
@@ -252,6 +252,13 @@ def main(cfg):
 
     t0 = time.perf_counter()
     for step, batch in enumerate(train_data_loader):
+        for row in batch["x"][0].reshape(30, 30):
+            print(",".join([str(int(x)) for x in row]))
+        print("-" * 30)
+        for row in batch["y"][0].reshape(30, 30):
+            print(",".join([str(int(x)) for x in row]))
+        # exit()
+
         batch = shard_data(batch)
 
         if step == 0:
@@ -293,7 +300,8 @@ def main(cfg):
                 except UnboundLocalError: # if checkpoint_every < eval_every, then val_metrics is not defined
                     checkpoint_metric = 0
                 ckpt_mngr.save(step, metrics=checkpoint_metric, args=ocp.args.StandardSave(state))
-                wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
+                if cfg.wandb:
+                    wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
 
         if step > 0 and step % steps_per_epoch == 0:
             epoch += 1

@@ -51,10 +51,11 @@ def get_config():
     cfg.data.data_dir = "data/arc-agi-1-aug-100"
     cfg.data.train_batch_size = 4
     cfg.data.eval_batch_size = 4
-
+    cfg.data.translate = True
+    
     cfg.parallel.n_devices = 1
 
-    cfg.wandb = True
+    cfg.wandb = False
     
     cfg.eval.pass_ks = [1, 2, 5, 10, 100, 1000]
     cfg.eval.eval_every = 1000
