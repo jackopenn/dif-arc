@@ -89,8 +89,8 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
     #     }
     # }
     preds = {}
-    cell_accs = jnp.array([0.0])
-    puzzle_accs = jnp.array([0.0])
+    cell_accs = jnp.array(0.0)
+    puzzle_accs = jnp.array(0.0)
     data_loader = data_loader_factory()
     n_samples = ceil(len(data_loader._data_source) / batch_size)
     for batch in tqdm(data_loader, desc="evaluating", total=n_samples):
