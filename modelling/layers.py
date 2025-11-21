@@ -39,7 +39,7 @@ class Attention(nnx.Module):
             positions = jnp.arange(x.shape[1])[None, :]
             q = apply_rope(q, positions, base_frequency=self.rope_theta)
             k = apply_rope(k, positions, base_frequency=self.rope_theta)
-        
+
         if jax.default_backend() == "tpu":
             q = jax.lax.with_sharding_constraint(q, P("data", None, None, None))
             k = jax.lax.with_sharding_constraint(k, P("data", None, None, None))
@@ -52,7 +52,7 @@ class Attention(nnx.Module):
                 q = jnp.swapaxes(q, 1, 2)
                 k = jnp.swapaxes(k, 1, 2)
                 v = jnp.swapaxes(v, 1, 2)
-
+            print(q.shape, k.shape, v.shape) # [batch_size, num_attention_heads, seq_len, head_dim]
             with jax.named_scope("attention"):
             #     att = jax.shard_map(
             #     partial(
@@ -85,11 +85,11 @@ class Attention(nnx.Module):
                 att = jax.vmap(
                         jax.shard_map(
                             partial(self._splash_attention_fn, seq_len=x.shape[1]),
-                            # in_specs=(
-                            #     P("data", None, None, None),
-                            #     P("data", None, None, None),
-                            #     P("data", None, None, None),
-                            # ),
+                            in_specs=(
+                                P("data", None, None, None),
+                                P("data", None, None, None),
+                                P("data", None, None, None),
+                            ),
                             out_specs=P("data", None, None, None),
                             check_vma=False
                         ),
