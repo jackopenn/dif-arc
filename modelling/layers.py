@@ -18,6 +18,8 @@ class GLU(nnx.Module):
 
 class Attention(nnx.Module):
     def __init__(self, hidden_dim, num_attention_heads, num_key_value_heads, head_dim, rope_theta, use_bias, rngs):
+        self.num_attention_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
         self.rope_theta = rope_theta
         self.q_proj = nnx.LinearGeneral(hidden_dim, (num_attention_heads, head_dim), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
         self.k_proj = nnx.LinearGeneral(hidden_dim, (num_key_value_heads, head_dim), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
