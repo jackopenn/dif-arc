@@ -1,6 +1,9 @@
+from functools import partial
 import jax
 import jax.numpy as jnp
+from jax.sharding import PartitionSpec as P
 from flax import nnx
+from jax.experimental.pallas.ops.tpu import splash_attention
 
 class GLU(nnx.Module):
     def __init__(self, hidden_dim, intermediate_dim, act_fn, use_bias, rngs):
@@ -21,13 +24,79 @@ class Attention(nnx.Module):
         self.v_proj = nnx.LinearGeneral(hidden_dim, (num_key_value_heads, head_dim), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
         self.o_proj = nnx.LinearGeneral((num_attention_heads, head_dim), hidden_dim, axis=(-2, -1), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
 
+    def _splash_attention_fn(self, seq_len: int):
+        return splash_attention.make_splash_mha(
+            mask=splash_attention.FullMask((seq_len, seq_len)),
+            head_shards=1,
+            q_seq_shards=1,
+        )
+
     def __call__(self, x):
         q, k, v = self.q_proj(x), self.k_proj(x), self.v_proj(x)
         if self.rope_theta:
             positions = jnp.arange(x.shape[1])[None, :]
             q = apply_rope(q, positions, base_frequency=self.rope_theta)
             k = apply_rope(k, positions, base_frequency=self.rope_theta)
-        att = jax.nn.dot_product_attention(query=q, key=k, value=v, is_causal=False)
+        
+        if jax.default_backend() == "tpu":
+            q = jax.lax.with_sharding_constraint(q, P("data", None, None, None))
+            k = jax.lax.with_sharding_constraint(k, P("data", None, None, None))
+            v = jax.lax.with_sharding_constraint(v, P("data", None, None, None))
+
+            with jax.named_scope("repeat_kv_and_swap_axes"):
+                k = jnp.repeat(k, self.num_attention_heads // self.num_key_value_heads, axis=2)
+                v = jnp.repeat(v, self.num_attention_heads // self.num_key_value_heads, axis=2)
+                
+                q = jnp.swapaxes(q, 1, 2)
+                k = jnp.swapaxes(k, 1, 2)
+                v = jnp.swapaxes(v, 1, 2)
+
+            with jax.named_scope("attention"):
+            #     att = jax.shard_map(
+            #     partial(
+            #         flash_attention.flash_attention,
+            #         causal=True,
+            #         block_sizes=flash_attention.BlockSizes(
+            #             block_q=512,
+            #             block_k_major=1024,
+            #             block_k=512,
+            #             block_b=4,
+
+            #             block_q_major_dkv=512,
+            #             block_k_major_dkv=1024,
+            #             block_k_dkv=512,
+            #             block_q_dkv=512,
+
+            #             block_k_major_dq=1024,
+            #             block_k_dq=512,
+            #             block_q_dq=512,
+            #         )
+            #     ),
+            #     in_specs=(
+            #         P("data", None, None, None),
+            #         P("data", None, None, None),
+            #         P("data", None, None, None),
+            #     ),
+            #     out_specs=P("data", None, None, None),
+            #     check_vma=False
+            # )(q, k, v)
+                att = jax.vmap(
+                        jax.shard_map(
+                            partial(self._splash_attention_fn, seq_len=x.shape[1]),
+                            in_specs=(
+                                P("data", None, None, None),
+                                P("data", None, None, None),
+                                P("data", None, None, None),
+                            ),
+                            out_specs=P("data", None, None, None),
+                            check_vma=False
+                        ),
+                        in_axes=(0, 0, 0)
+                    )(q, k, v)
+            
+            att = jnp.swapaxes(att, 1, 2)
+        else:
+            att = jax.nn.dot_product_attention(query=q, key=k, value=v, is_causal=False)
         return self.o_proj(att)
     
 
