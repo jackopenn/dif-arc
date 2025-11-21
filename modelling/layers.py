@@ -26,8 +26,6 @@ class Attention(nnx.Module):
         self.v_proj = nnx.LinearGeneral(hidden_dim, (num_key_value_heads, head_dim), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
         self.o_proj = nnx.LinearGeneral((num_attention_heads, head_dim), hidden_dim, axis=(-2, -1), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
 
-        
-
     def __call__(self, x):
         q, k, v = self.q_proj(x), self.k_proj(x), self.v_proj(x)
         if self.rope_theta:
@@ -60,9 +58,11 @@ class Attention(nnx.Module):
                 )
                 def splash_attention_fn(q, k, v):
                     seq_len = q.shape[-2]
+                    mask = splash_attention.FullMask((seq_len, seq_len))
+                    mask = splash_attention.MultiHeadMask(masks=(mask,) * self.num_attention_heads),
                     return jax.vmap(
                         splash_attention.make_splash_mha(
-                            mask=splash_attention.FullMask((seq_len, seq_len)),
+                            mask=mask,
                             head_shards=1,
                             q_seq_shards=1,
                         ),
