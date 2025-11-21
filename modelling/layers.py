@@ -33,7 +33,8 @@ class Attention(nnx.Module):
             q = apply_rope(q, positions, base_frequency=self.rope_theta)
             k = apply_rope(k, positions, base_frequency=self.rope_theta)
 
-        if jax.default_backend() == "tpu":
+        # tmp disbale this - slow af
+        if False and jax.default_backend() == "tpu":
             q = jax.lax.with_sharding_constraint(q, P("data", None, None, None))
             k = jax.lax.with_sharding_constraint(k, P("data", None, None, None))
             v = jax.lax.with_sharding_constraint(v, P("data", None, None, None))
