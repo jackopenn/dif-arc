@@ -59,7 +59,7 @@ class Attention(nnx.Module):
                     check_vma=False
                 )
                 def splash_attention_fn(q, k, v):
-                    seq_len = q.shape[1]
+                    seq_len = q.shape[-2]
                     return jax.vmap(
                         splash_attention.make_splash_mha(
                             mask=splash_attention.FullMask((seq_len, seq_len)),
