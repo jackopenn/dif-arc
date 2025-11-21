@@ -285,17 +285,17 @@ def main(cfg):
             if jax.process_index() == 0:
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step, "epoch": epoch})
         
-        if step > 0 and step % cfg.log_every == 0:
-            jax.experimental.multihost_utils.sync_global_devices("barrier")
-            if jax.process_index() == 0:
-                _, state = nnx.split(model)
-                try:
-                    checkpoint_metric = val_metrics["puzzle_acc"]
-                except UnboundLocalError: # if checkpoint_every < eval_every, then val_metrics is not defined
-                    checkpoint_metric = 0
-                ckpt_mngr.save(step, metrics=checkpoint_metric, args=ocp.args.StandardSave(state))
-                if cfg.wandb:
-                    wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
+        # if step > 0 and step % cfg.log_every == 0:
+        #     jax.experimental.multihost_utils.sync_global_devices("barrier")
+        #     if jax.process_index() == 0:
+        #         _, state = nnx.split(model)
+        #         try:
+        #             checkpoint_metric = val_metrics["puzzle_acc"]
+        #         except UnboundLocalError: # if checkpoint_every < eval_every, then val_metrics is not defined
+        #             checkpoint_metric = 0
+        #         ckpt_mngr.save(step, metrics=checkpoint_metric, args=ocp.args.StandardSave(state))
+        #         if cfg.wandb:
+        #             wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
 
         if step > 0 and step % steps_per_epoch == 0:
             epoch += 1
