@@ -131,7 +131,7 @@ class Model(nnx.Module):
             embedding = jnp.concatenate([puzzle_emb, image_emb], axis=1)
         
         # scale
-        embedding = embedding / jnp.sqrt(embedding.shape[-1])
+        embedding = embedding * jnp.sqrt(embedding.shape[-1])
         return embedding
 
 
