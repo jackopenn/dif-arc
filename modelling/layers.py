@@ -35,7 +35,7 @@ class Attention(nnx.Module):
         out_specs=P("data", None, None, None),
         check_vma=False
     )
-    def _splash_attention_fn(self, q, k, v):
+    def splash_attention_fn(self, q, k, v):
         seq_len = q.shape[1]
         return jax.vmap(
             splash_attention.make_splash_mha(
@@ -68,7 +68,7 @@ class Attention(nnx.Module):
                 v = jnp.swapaxes(v, 1, 2)
 
             with jax.named_scope("attention"):
-                att = self._splash_attention_fn(q, k, v, x.shape[1])
+                att = self.splash_attention_fn(q, k, v)
 
             att = jnp.swapaxes(att, 1, 2)
         else:
