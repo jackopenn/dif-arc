@@ -253,13 +253,6 @@ def main(cfg):
 
     t0 = time.perf_counter()
     for step, batch in enumerate(train_data_loader):
-        for row in batch["x"][0].reshape(30, 30):
-            print(",".join([str(int(x)) for x in row]))
-        print("-" * 30)
-        for row in batch["y"][0].reshape(30, 30):
-            print(",".join([str(int(x)) for x in row]))
-        # exit()
-
         batch = shard_data(batch)
 
         if step == 0:
