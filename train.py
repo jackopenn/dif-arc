@@ -15,7 +15,8 @@ from modelling.model import Model
 from utils import MetricLogger
 from evaluate import evaluate
 
-
+ # TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
+ 
 def main(cfg):
     if cfg.parallel.n_devices > 1:
         jax.distributed.initialize()
