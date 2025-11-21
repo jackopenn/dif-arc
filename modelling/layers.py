@@ -85,11 +85,11 @@ class Attention(nnx.Module):
                 att = jax.vmap(
                         jax.shard_map(
                             partial(self._splash_attention_fn, seq_len=x.shape[1]),
-                            in_specs=(
-                                P("data", None, None, None),
-                                P("data", None, None, None),
-                                P("data", None, None, None),
-                            ),
+                            # in_specs=(
+                            #     P("data", None, None, None),
+                            #     P("data", None, None, None),
+                            #     P("data", None, None, None),
+                            # ),
                             out_specs=P("data", None, None, None),
                             check_vma=False
                         ),
