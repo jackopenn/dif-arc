@@ -26,25 +26,6 @@ class Attention(nnx.Module):
         self.v_proj = nnx.LinearGeneral(hidden_dim, (num_key_value_heads, head_dim), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
         self.o_proj = nnx.LinearGeneral((num_attention_heads, head_dim), hidden_dim, axis=(-2, -1), use_bias=use_bias, dtype=jnp.bfloat16, rngs=rngs)
 
-    @jax.shard_map(
-        in_specs=(
-            P("data", None, None, None),
-            P("data", None, None, None),
-            P("data", None, None, None),
-        ),
-        out_specs=P("data", None, None, None),
-        check_vma=False
-    )
-    def splash_attention_fn(self, q, k, v):
-        seq_len = q.shape[1]
-        return jax.vmap(
-            splash_attention.make_splash_mha(
-                mask=splash_attention.FullMask((seq_len, seq_len)),
-                head_shards=1,
-                q_seq_shards=1,
-            ),
-            in_axes=(0, 0, 0)
-        )(q, k, v)
         
 
     def __call__(self, x):
@@ -68,7 +49,27 @@ class Attention(nnx.Module):
                 v = jnp.swapaxes(v, 1, 2)
 
             with jax.named_scope("attention"):
-                att = self.splash_attention_fn(q, k, v)
+                @jax.shard_map(
+                    in_specs=(
+                        P("data", None, None, None),
+                        P("data", None, None, None),
+                        P("data", None, None, None),
+                    ),
+                    out_specs=P("data", None, None, None),
+                    check_vma=False
+                )
+                def splash_attention_fn(q, k, v):
+                    seq_len = q.shape[1]
+                    return jax.vmap(
+                        splash_attention.make_splash_mha(
+                            mask=splash_attention.FullMask((seq_len, seq_len)),
+                            head_shards=1,
+                            q_seq_shards=1,
+                        ),
+                        in_axes=(0, 0, 0)
+                    )(q, k, v)
+
+                att = splash_attention_fn(q, k, v)
 
             att = jnp.swapaxes(att, 1, 2)
         else:
