@@ -74,7 +74,10 @@ class Attention(nnx.Module):
 
             att = jnp.swapaxes(att, 1, 2)
         else:
-            att = jax.nn.dot_product_attention(query=q, key=k, value=v, is_causal=False)
+            att = jax.nn.dot_product_attention(
+                query=q, key=k, value=v, is_causal=False,
+                implementation="cudnn" if jax.default_backend() == "gpu" else "xla"
+            )
         return self.o_proj(att)
     
 
