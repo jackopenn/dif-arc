@@ -23,8 +23,8 @@ def init_carry(batch, z_init, y_init):
     """initialize the carry with the initial data"""
     batch_size = batch['x'].shape[0]
     hidden_dim = z_init.shape[-1]
-    z_init = jnp.broadcast_to(z_init, (batch_size, 916, hidden_dim))
-    y_init = jnp.broadcast_to(y_init, (batch_size, 916, hidden_dim))
+    z_init = jnp.broadcast_to(z_init, (batch_size, 901, hidden_dim))
+    y_init = jnp.broadcast_to(y_init, (batch_size, 901, hidden_dim))
     # z_init = shard_data(z_init)
     # y_init = shard_data(y_init)
     return Carry(

@@ -25,6 +25,11 @@ def get_config():
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
     cfg.model.puzzle_emb_len = 1
 
+    #vision mode
+    cfg.model.vision_mode = False
+    cfg.model.patch_size = None
+    cfg.model.input_size = None
+
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 6
     cfg.recursion.T = 3
