@@ -35,8 +35,11 @@ def main(cfg):
                 optax.warmup_constant_schedule(**cfg.other_schedule.to_dict()), **cfg.optim.to_dict()
             )
         },
-        lambda state: jax.tree.map_with_path(lambda path, _: "embed" if path[0].key == "embed" else "other", state)
+        lambda state: jax.tree.map_with_path(lambda path, _: "embed" if path[0].key == "puzzle_emb" else "other", state)
     )
+
+    jax.tree.map_with_path(lambda path, _: print(path), nnx.state(model))
+    exit()
     optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
     
     shard_data = lambda data: data
