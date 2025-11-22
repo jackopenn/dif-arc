@@ -40,16 +40,28 @@ def init_carry(batch, z_init, y_init):
 @nnx.jit(static_argnames=["N_supervision", "n", "T" ])
 def eval_step(model, carry, N_supervision, n, T):
     def latent_recursion(model, x, y, z, n):
-        for _ in range(n):
-            z = model(x, y, z)
+        def update_z(z_state, _):
+            new_z = model(x, y, z_state)
+            return new_z, None
+        z, _ = jax.lax.scan(update_z, z, None, length=n)
         y = model(y, z)
+        return y, z
+
+    def unroll_latent_recursions(model, x, y, z, n, steps):
+        if steps <= 0:
+            return y, z
+
+        def body(carry, _):
+            curr_y, curr_z = carry
+            return latent_recursion(model, x, curr_y, curr_z, n), None
+
+        (y, z), _ = jax.lax.scan(body, (y, z), None, length=steps)
         return y, z
 
     x = model.input_embedding(carry.x_input, carry.aug_puzzle_idx)
     y, z = carry.y, carry.z
-    for _ in range(N_supervision):
-        for _ in range(T):
-            y, z = latent_recursion(model, x, y, z, n)
+    total_steps = N_supervision * T
+    y, z = unroll_latent_recursions(model, x, y, z, n, total_steps)
     y_logits = model.output_head(y)
     y_preds = jnp.argmax(y_logits, axis=-1)
     cell_correct = y_preds == carry.y_true

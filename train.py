@@ -139,9 +139,24 @@ def main(cfg):
 
 
     def latent_recursion(model, x, y, z, n):
-        for _ in range(n):
-            z = model(x, y, z)
+        def update_z(z_state, _):
+            new_z = model(x, y, z_state)
+            return new_z, None
+
+        z, _ = jax.lax.scan(update_z, z, None, length=n)
         y = model(y, z)
+        return y, z
+    
+
+    def unroll_latent_recursions(model, x, y, z, n, steps):
+        if steps <= 0:
+            return y, z
+
+        def body(carry, _):
+            curr_y, curr_z = carry
+            return latent_recursion(model, x, curr_y, curr_z, n), None
+
+        (y, z), _ = jax.lax.scan(body, (y, z), None, length=steps)
         return y, z
     
     
@@ -175,9 +190,9 @@ def main(cfg):
         # 1 N_supervision step
         x = model.input_embedding(carry.x_input, carry.aug_puzzle_idx)
         # deep recursion loop (no grads)
-        z, y = carry.z, carry.y
-        for _ in range(T-1):
-            y, z = latent_recursion(model, x, y, z, n)
+        y, z = carry.y, carry.z
+        unroll_steps = max(T - 1, 0)
+        y, z = unroll_latent_recursions(model, x, y, z, n, unroll_steps)
         # 1-step approx BPTT
         grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
         (loss, (y, z, y_loss, q_loss, y_preds, q_logits)), grads = grad_fn(
