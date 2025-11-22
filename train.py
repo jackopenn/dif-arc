@@ -147,7 +147,7 @@ def main(cfg):
         def latent_recursion_body(z, _):
             return model(x, y, z), None
         with jax.named_scope("latent_recursion_scan"):
-            z, _ = jax.lax.scan(latent_recursion_body, z, None, length=n)
+            z, _ = jax.lax.scan(latent_recursion_body, z, None, length=n, unroll=True)
         with jax.named_scope("latent_recursion_last"):
             y = model(y, z)
         return y, z
@@ -159,7 +159,7 @@ def main(cfg):
             y, z = latent_recursion(model, x, y, z, n)
             return (y, z), None
         with jax.named_scope("deep_recursion_scan"):
-            (y, z), _ = jax.lax.scan(deep_recursion_body, (y, z), None, length=T)
+            (y, z), _ = jax.lax.scan(deep_recursion_body, (y, z), None, length=T, unroll=True)
         return y, z
 
     def loss_fn(model, x_input, aug_puzzle_idx, y, z, y_true, n):
