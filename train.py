@@ -38,7 +38,6 @@ def main(cfg):
         lambda state: jax.tree.map_with_path(lambda path, _: "embed" if path[0].key == "puzzle_emb" else "other", state)
     )
 
-    jax.tree.map_with_path(lambda path, _: print(path), nnx.state(model))
     optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
     
     shard_data = lambda data: data
