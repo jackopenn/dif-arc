@@ -9,7 +9,7 @@ import optax
 from sws import run
 import wandb
 import orbax.checkpoint as ocp
-
+from datetime import datetime
 from dataset import get_data_loader
 from modelling.model import Model
 from utils import MetricLogger
@@ -232,13 +232,12 @@ def main(cfg):
     # init logging 
     if jax.process_index() == 0:
         if cfg.wandb:
-            run = wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
+            wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
             train_logger = MetricLogger(cfg.data.train_batch_size, prefix="train", buffer=True, wandb=wandb)
             val_logger = MetricLogger(cfg.data.eval_batch_size, prefix="val", buffer=False, wandb=wandb)
         else:
             train_logger = MetricLogger(cfg.data.train_batch_size, prefix="train", buffer=True, wandb=None)
             val_logger = MetricLogger(cfg.data.eval_batch_size, prefix="val", buffer=False, wandb=None)
-            run = None
         
     # init latents
     key, y_key, z_key = jax.random.split(key, 3)
@@ -280,7 +279,7 @@ def main(cfg):
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
     profiler_options.host_tracer_level = 3
-    trace_dir = f"profile_{run.id}"
+    trace_dir = f"profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
     steps_per_epoch = ceil(len(train_data_loader._data_source) / cfg.data.train_batch_size)
     print(f"{steps_per_epoch=}")
