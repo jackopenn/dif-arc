@@ -29,6 +29,7 @@ class Model(nnx.Module):
         self.puzzle_emb_len = puzzle_emb_len
         self.vision_mode = vision_mode
         self.input_size = input_size
+        self.patch_size = patch_size
         self.rope_theta = rope_theta
         if not self.vision_mode:
             if not self.rope_theta:
@@ -46,7 +47,16 @@ class Model(nnx.Module):
                 hidden_dim,
                 hidden_dim,
                 (patch_size, patch_size),
-                stride=patch_size,
+                strides=patch_size,
+                use_bias=use_bias,
+                dtype=jnp.bfloat16,
+                rngs=rngs
+            )
+            self.patch_unproj = nnx.ConvTranspose(
+                hidden_dim,
+                hidden_dim,
+                (patch_size, patch_size),
+                strides=patch_size,
                 use_bias=use_bias,
                 dtype=jnp.bfloat16,
                 rngs=rngs
@@ -112,6 +122,7 @@ class Model(nnx.Module):
     
     def input_embedding(self, x, aug_puzzle_idx):
         puzzle_emb = self.puzzle_emb(aug_puzzle_idx) # [batch_size, 1, hidden_dim]
+        B, _, D = puzzle_emb.shape
         if self.puzzle_emb_len > 1:
             pad_len = self.puzzle_emb_len - 1
             puzzle_emb = jnp.pad(puzzle_emb, ((0, 0), (0, pad_len), (0, 0)), mode='constant', constant_values=0) # [batch_size, puzzle_emb_len, hidden_dim]
@@ -121,22 +132,29 @@ class Model(nnx.Module):
             if not self.rope_theta:
                 embedding = 0.707106781 * (embedding + self.pos_embed(jnp.arange(embedding.shape[1])))
         else:
+            x = x.reshape(B, self.input_size, self.input_size)
             image_emb = self.embed(x) # [batch_size, input_size, input_size, hidden_dim]
             if not self.rope_theta:
-                horizontal_pos_emb = jnp.concatenate([jnp.zeros(self.input_size, image_emb.shape[-1] // 2), self.pos_embed_horizontal(jnp.arange(self.input_size))], axis=-1) # [input_size, hidden_dim]
-                vertical_pos_emb = jnp.concatenate([self.pos_embed_vertical(jnp.arange(self.input_size)), jnp.zeros(self.input_size, image_emb.shape[-1] // 2)], axis=-1) # [input_size, hidden_dim]
+                horizontal_pos_emb = jnp.concatenate([jnp.zeros((self.input_size, D // 2)), self.pos_embed_horizontal(jnp.arange(self.input_size))], axis=-1) # [input_size, hidden_dim]
+                vertical_pos_emb = jnp.concatenate([self.pos_embed_vertical(jnp.arange(self.input_size)), jnp.zeros((self.input_size, D // 2))], axis=-1) # [input_size, hidden_dim]
                 image_emb = image_emb + horizontal_pos_emb[None, :, None, :] + vertical_pos_emb[None, None, :, :] # [batch_size, input_size, input_size, hidden_dim]
             image_emb = self.patch_proj(image_emb) # [batch_size, input_size//patch_size, input_size//patch_size, hidden_dim]
-            image_emb = image_emb.reshape(image_emb.shape[0], -1, image_emb.shape[-1])
+            image_emb = image_emb.reshape(B, -1, D)
             embedding = jnp.concatenate([puzzle_emb, image_emb], axis=1)
         
         # scale
-        embedding = embedding * jnp.sqrt(embedding.shape[-1])
+        embedding = embedding * jnp.sqrt(D)
         return embedding
 
 
     def output_head(self, x):
-        return self.unembed(x[:, self.puzzle_emb_len:, :])
+        x = x[:, self.puzzle_emb_len:]
+        B, S, D = x.shape
+        if self.vision_mode:
+            x = x.reshape(B, self.input_size // self.patch_size, self.input_size // self.patch_size, D) # [batch_size, input_size//patch_size, input_size//patch_size, hidden_dim]
+            x = self.patch_unproj(x) # [batch_size, input_size, input_size, hidden_dim]
+            x = x.reshape(B, -1, D) # [batch_size, input_size * input_size, hidden_dim]
+        return self.unembed(x)
 
     def q_head(self, x):
         return self.q_head_layer(x[:, 0, :])

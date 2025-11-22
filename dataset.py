@@ -75,7 +75,7 @@ class TranslateAndPad(grain.transforms.RandomMap):
         }
     
 
-def get_data_loader(data_dir, batch_size, translate, repeat=True, drop_remainder=True,shard_by_jax_process=False):
+def get_data_loader(data_dir, batch_size, translate, max_grid_size, repeat=True, drop_remainder=True, shard_by_jax_process=False):
     per_process_batch_size = batch_size // jax.process_count()
     data_source = JsonDataSource(data_dir)
     sampler = grain.samplers.IndexSampler(
@@ -87,7 +87,7 @@ def get_data_loader(data_dir, batch_size, translate, repeat=True, drop_remainder
     )
     operations = [
         Parse(),
-        TranslateAndPad(translate=translate),
+        TranslateAndPad(translate=translate, max_grid_size=max_grid_size),
         grain.transforms.Batch(batch_size=per_process_batch_size, drop_remainder=drop_remainder)
     ]
     return grain.DataLoader(data_source=data_source, operations=operations, sampler=sampler)

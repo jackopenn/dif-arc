@@ -76,7 +76,11 @@ def main(cfg):
         """initialize the carry with the initial data"""
         batch_size = batch['x'].shape[0]
         hidden_dim = z_init.shape[-1]
-        seq_len = 900 + cfg.model.puzzle_emb_len
+        if cfg.model.vision_mode:
+            seq_len = cfg.model.input_size // cfg.model.patch_size * cfg.model.input_size // cfg.model.patch_size
+        else:
+            seq_len = 900
+        seq_len = seq_len + cfg.model.puzzle_emb_len
         z_init = jnp.broadcast_to(z_init, (batch_size, seq_len, hidden_dim))
         y_init = jnp.broadcast_to(y_init, (batch_size, seq_len, hidden_dim))
         if cfg.parallel.n_devices > 1:
@@ -228,8 +232,24 @@ def main(cfg):
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
 
     # init data loader
-    train_data_loader = get_data_loader(cfg.data.data_dir + "/train.jsonl", cfg.data.train_batch_size, translate=cfg.data.translate, repeat=True, drop_remainder=True, shard_by_jax_process=True)
-    val_data_loader_factory = lambda: get_data_loader(cfg.data.data_dir + "/test.jsonl", cfg.data.eval_batch_size, translate=False,repeat=False, drop_remainder=True, shard_by_jax_process=True) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
+    train_data_loader = get_data_loader(
+        cfg.data.data_dir + "/train.jsonl",
+        cfg.data.train_batch_size,
+        translate=cfg.data.translate,
+        max_grid_size=cfg.data.max_grid_size,
+        repeat=True,
+        drop_remainder=True,
+        shard_by_jax_process=True
+    )
+    val_data_loader_factory = lambda: get_data_loader(
+        cfg.data.data_dir + "/test.jsonl",
+        cfg.data.eval_batch_size,
+        translate=False,
+        max_grid_size=cfg.data.max_grid_size,
+        repeat=False,
+        drop_remainder=True,
+        shard_by_jax_process=True
+    ) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
     # init checkpoint manager
     ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{os.getcwd()}/checkpoints/')
@@ -285,17 +305,16 @@ def main(cfg):
             if jax.process_index() == 0:
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step, "epoch": epoch})
         
-        # if step > 0 and step % cfg.log_every == 0:
-        #     jax.experimental.multihost_utils.sync_global_devices("barrier")
-        #     if jax.process_index() == 0:
-        #         _, state = nnx.split(model)
-        #         try:
-        #             checkpoint_metric = val_metrics["puzzle_acc"]
-        #         except UnboundLocalError: # if checkpoint_every < eval_every, then val_metrics is not defined
-        #             checkpoint_metric = 0
-        #         ckpt_mngr.save(step, metrics=checkpoint_metric, args=ocp.args.StandardSave(state))
-        #         if cfg.wandb:
-        #             wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
+        if step > 0 and step % cfg.log_every == 0:
+            jax.experimental.multihost_utils.sync_global_devices("barrier")
+            _, state = nnx.split(model)
+            try:
+                checkpoint_metric = val_metrics["puzzle_acc"]
+            except UnboundLocalError: # if checkpoint_every < eval_every, then val_metrics is not defined
+                checkpoint_metric = 0
+            ckpt_mngr.save(step, metrics=checkpoint_metric, args=ocp.args.StandardSave(state))
+            if jax.process_index() == 0 and cfg.wandb:
+                wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
 
         if step > 0 and step % steps_per_epoch == 0:
             epoch += 1
