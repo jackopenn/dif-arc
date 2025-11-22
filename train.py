@@ -143,12 +143,21 @@ def main(cfg):
 
 
     def latent_recursion(model, x, y, z, n):
-        for _ in range(n):
-            z = model(x, y, z)
+        def latent_recursion_body(z, _):
+            return model(x, y, z), None
+        z, _ = jax.lax.scan(latent_recursion_body, z, None, length=n)
         y = model(y, z)
         return y, z
-    
-    
+
+
+    def deep_recursion(model, x, y, z, n, T):
+        def deep_recursion_body(carry, _):
+            y, z = carry
+            y, z = latent_recursion(model, x, y, z, n)
+            return (y, z), None
+        (y, z), _ = jax.lax.scan(deep_recursion_body, (y, z), None, length=T)
+        return y, z
+
     def loss_fn(model, x_input, aug_puzzle_idx, y, z, y_true, n):
         # forward pass
         x = model.input_embedding(x_input, aug_puzzle_idx)
@@ -172,6 +181,7 @@ def main(cfg):
         return loss, (y, z, y_loss, q_loss, y_preds, q_logits)
     
     
+            
     @nnx.jit(static_argnames=["N_supervision", "n", "T", "halt_explore_prob"])
     def train_step(model, optimizer, carry, batch, y_init, z_init, N_supervision, n, T, halt_explore_prob, key):
         # update carry (if halted, update with init and batch)
@@ -180,8 +190,7 @@ def main(cfg):
         x = model.input_embedding(carry.x_input, carry.aug_puzzle_idx)
         # deep recursion loop (no grads)
         z, y = carry.z, carry.y
-        for _ in range(T-1):
-            y, z = latent_recursion(model, x, y, z, n)
+        y, z = deep_recursion(model, x, y, z, n, T-1)
         # 1-step approx BPTT
         grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
         (loss, (y, z, y_loss, q_loss, y_preds, q_logits)), grads = grad_fn(
@@ -265,6 +274,7 @@ def main(cfg):
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
     profiler_options.host_tracer_level = 3
+    # trace_dir = f"profile_{wandb.run.id}"
     trace_dir = "profile"
     
     steps_per_epoch = ceil(len(train_data_loader._data_source) / cfg.data.train_batch_size)
