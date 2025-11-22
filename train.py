@@ -39,7 +39,6 @@ def main(cfg):
     )
 
     jax.tree.map_with_path(lambda path, _: print(path), nnx.state(model))
-    exit()
     optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
     
     shard_data = lambda data: data
@@ -281,8 +280,7 @@ def main(cfg):
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
     profiler_options.host_tracer_level = 3
-    # trace_dir = f"profile_{wandb.run.id}"
-    trace_dir = "profile"
+    trace_dir = f"profile_{wandb.run.id}"
     
     steps_per_epoch = ceil(len(train_data_loader._data_source) / cfg.data.train_batch_size)
     print(f"{steps_per_epoch=}")
