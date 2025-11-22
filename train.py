@@ -38,7 +38,7 @@ def main(cfg):
         lambda state: jax.tree.map_with_path(lambda path, _: "embed" if path[0].key == "embed" else "other", state)
     )
     optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
-
+    
     shard_data = lambda data: data
     if cfg.parallel.n_devices > 1:
         mesh = jax.make_mesh((cfg.parallel.n_devices,), ("data",))
@@ -52,6 +52,7 @@ def main(cfg):
 
         _, model_state = nnx.split(model)
         sharded_model_state = jax.lax.with_sharding_constraint(model_state, repl_sharding)
+        sharded_model_state.puzzle_emb = jax.lax.with_sharding_constraint(sharded_model_state.puzzle_emb, data_sharding)
         nnx.update(model, sharded_model_state)
         
         _, optimizer_state = nnx.split(optimizer)
