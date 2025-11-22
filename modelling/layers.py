@@ -84,9 +84,9 @@ class Attention(nnx.Module):
 class TransformerBlock(nnx.Module):
     def __init__(self,hidden_dim, num_attention_heads, num_key_value_heads, head_dim, intermediate_dim, act_fn, rope_theta, use_bias, rngs):
         self.attention = Attention(hidden_dim, num_attention_heads, num_key_value_heads, head_dim, rope_theta, use_bias, rngs)
-        self.norm_1 = nnx.RMSNorm(hidden_dim, rngs=rngs)
+        self.norm_1 = nnx.RMSNorm(hidden_dim, dtype=jnp.bfloat16, rngs=rngs)
         self.mlp = GLU(hidden_dim, intermediate_dim, act_fn, use_bias, rngs)
-        self.norm_2 = nnx.RMSNorm(hidden_dim, rngs=rngs)
+        self.norm_2 = nnx.RMSNorm(hidden_dim, dtype=jnp.bfloat16, rngs=rngs)
 
     def __call__(self, x):
         # x = x + self.attention(self.norm_1(x))
