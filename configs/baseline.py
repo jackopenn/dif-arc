@@ -31,8 +31,8 @@ def get_config():
     cfg.model.input_size = None
 
     cfg.recursion.N_supervision = 16
-    cfg.recursion.n = 6
-    cfg.recursion.T = 3
+    cfg.recursion.n = 4
+    cfg.recursion.T = 2
     cfg.recursion.act = True
     cfg.recursion.halt_explore_prob = 0.1
     
@@ -53,9 +53,9 @@ def get_config():
 
     cfg.max_steps = 100_000
 
-    cfg.data.data_dir = "data/arc-agi-1-aug-100"
-    cfg.data.train_batch_size = 1024
-    cfg.data.eval_batch_size = 1024
+    cfg.data.data_dir = "data/arc-agi-2-aug-concept-1000"
+    cfg.data.train_batch_size = 768
+    cfg.data.eval_batch_size = 768
     cfg.data.translate = True
     cfg.data.max_grid_size = 30
 
@@ -63,7 +63,7 @@ def get_config():
     
     cfg.wandb = True
     
-    cfg.eval.pass_ks = [1, 2, 5, 10, 100]
+    cfg.eval.pass_ks = [1, 2, 5, 10, 100, 1000]
     cfg.eval.eval_every = 10_000
     cfg.log_every = lambda: cfg.eval.eval_every
 

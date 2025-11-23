@@ -53,8 +53,8 @@ def eval_step(model, carry, N_supervision, n, T):
     y_logits = model.output_head(y)
     y_preds = jnp.argmax(y_logits, axis=-1)
     cell_correct = y_preds == carry.y_true
-    puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 10)
-    cell_acc = cell_correct.mean(where=carry.y_true < 10)
+    puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 11)
+    cell_acc = cell_correct.mean(where=carry.y_true < 11)
     puzzle_acc = puzzle_correct.mean()
     return y_preds, cell_acc, puzzle_acc
 
