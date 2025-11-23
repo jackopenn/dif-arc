@@ -12,6 +12,7 @@ import orbax.checkpoint as ocp
 from datetime import datetime
 from dataset import get_data_loader
 from modelling.model import Model
+from modelling.optimizers import adamw_atan2
 from utils import MetricLogger
 from evaluate import evaluate
 
@@ -25,14 +26,16 @@ def main(cfg):
     key = jax.random.key(cfg.seed)
     
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
-    # TODO: need to check this works
+    opt_fn = adamw_atan2 if cfg.optim.use_atan2 else optax.adamw
+    optim_params = cfg.optim.to_dict()
+    optim_params.pop("use_atan2")
     tx = optax.partition(
         {
-            "embed": optax.adamw(
-                optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()),**cfg.optim.to_dict()
+            "embed": opt_fn(
+                optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()), **optim_params
             ),
-            "other": optax.adamw(
-                optax.warmup_constant_schedule(**cfg.other_schedule.to_dict()), **cfg.optim.to_dict()
+            "other": opt_fn(
+                optax.warmup_constant_schedule(**cfg.other_schedule.to_dict()), **optim_params
             )
         },
         lambda state: jax.tree.map_with_path(lambda path, _: "embed" if path[0].key == "puzzle_emb" else "other", state)
