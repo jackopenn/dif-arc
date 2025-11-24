@@ -36,9 +36,13 @@ def get_config():
     cfg.recursion.act = True
     cfg.recursion.halt_explore_prob = 0.1
     
+    cfg.optim.use_atan2 = True
     cfg.optim.weight_decay = 0.1
     cfg.optim.b1 = 0.9
     cfg.optim.b2 = 0.95
+
+    cfg.use_ema = True
+    cfg.ema_weight = 0.999
 
     init_value = 0
     warmup_steps = 2000

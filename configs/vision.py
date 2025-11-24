@@ -22,23 +22,27 @@ def get_config():
     cfg.model.tie_embeddings = False
     cfg.model.use_bias = False
     cfg.model.rope_theta = 10000 # none = learned
-    cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
+    cfg.model.puzzle_vocab_size = lambda: ((get_puzzle_vocab_size(cfg.data.data_dir) // 64) + 1) * 64
     cfg.model.puzzle_emb_len = 1
 
-    # vision mode
+    #vision mode
     cfg.model.vision_mode = True
     cfg.model.patch_size = 2
     cfg.model.input_size = 64
 
     cfg.recursion.N_supervision = 16
-    cfg.recursion.n = 6
-    cfg.recursion.T = 3
+    cfg.recursion.n = 4
+    cfg.recursion.T = 2
     cfg.recursion.act = True
     cfg.recursion.halt_explore_prob = 0.1
     
+    cfg.optim.use_atan2 = True
     cfg.optim.weight_decay = 0.1
     cfg.optim.b1 = 0.9
     cfg.optim.b2 = 0.95
+
+    cfg.use_ema = True
+    cfg.ema_weight = 0.999
 
     init_value = 0
     warmup_steps = 2000
@@ -53,16 +57,17 @@ def get_config():
 
     cfg.max_steps = 100_000
 
-    cfg.data.data_dir = "data/arc-agi-1-aug-100"
-    cfg.data.train_batch_size = 1024
-    cfg.data.eval_batch_size = 1024
+    cfg.data.data_dir = "data/arc-agi-2-aug-concept-1000"
+    cfg.data.train_batch_size = 768
+    cfg.data.eval_batch_size = 768
     cfg.data.translate = True
+    cfg.data.max_grid_size = lambda: cfg.model.input_size
 
     cfg.parallel.n_devices = 16
     
     cfg.wandb = True
     
-    cfg.eval.pass_ks = [1, 2, 5, 10, 100]
+    cfg.eval.pass_ks = [1, 2, 5, 10, 100, 1000]
     cfg.eval.eval_every = 10_000
     cfg.log_every = lambda: cfg.eval.eval_every
 
