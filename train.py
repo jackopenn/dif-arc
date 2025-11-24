@@ -32,8 +32,8 @@ def main(cfg):
     optim_params.pop("use_atan2")
     tx = optax.partition(
         {
-            "embed": opt_fn(
-                optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()), **optim_params
+            "embed": optax.sign_sgd(
+                optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()),
             ),
             "other": opt_fn(
                 optax.warmup_constant_schedule(**cfg.other_schedule.to_dict()), **optim_params
