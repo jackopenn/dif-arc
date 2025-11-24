@@ -76,3 +76,15 @@ def adamw_atan2(
         transform.add_decayed_weights(weight_decay, mask), # TODO: remove decay
         transform.scale_by_learning_rate(learning_rate),
     )
+
+
+def sign_sgdw(
+    learning_rate: base.ScalarOrSchedule,
+    weight_decay: base.ScalarOrSchedule = 1e-4,
+    mask: Optional[Union[Any, Callable[[base.Params], Any]]] = None,
+):
+    return combine.chain(
+        transform.scale_by_sign(),
+        transform.add_decayed_weights(weight_decay, mask),
+        transform.scale_by_learning_rate(learning_rate),
+    )
