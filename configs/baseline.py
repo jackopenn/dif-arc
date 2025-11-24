@@ -41,6 +41,9 @@ def get_config():
     cfg.optim.b1 = 0.9
     cfg.optim.b2 = 0.95
 
+    cfg.use_ema = True
+    cfg.ema_weight = 0.999
+
     init_value = 0
     warmup_steps = 2000
 

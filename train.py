@@ -26,6 +26,7 @@ def main(cfg):
     key = jax.random.key(cfg.seed)
     
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
+
     opt_fn = adamw_atan2 if cfg.optim.use_atan2 else optax.adamw
     optim_params = cfg.optim.to_dict()
     optim_params.pop("use_atan2")
@@ -166,6 +167,7 @@ def main(cfg):
             (y, z), _ = jax.lax.scan(deep_recursion_body, (y, z), None, length=T, unroll=True)
         return y, z
 
+
     def loss_fn(model, x_input, aug_puzzle_idx, y, z, y_true, n):
         # forward pass
         x = model.input_embedding(x_input, aug_puzzle_idx)
@@ -189,9 +191,8 @@ def main(cfg):
         return loss, (y, z, y_loss, q_loss, y_preds, q_logits)
     
     
-            
     @nnx.jit(static_argnames=["N_supervision", "n", "T", "halt_explore_prob"])
-    def train_step(model, optimizer, carry, batch, y_init, z_init, N_supervision, n, T, halt_explore_prob, key):
+    def train_step(model, optimizer, carry, batch, y_init, z_init, N_supervision, n, T, halt_explore_prob, ema_model, key):
         # update carry (if halted, update with init and batch)
         carry = pre_update_carry(carry, batch, z_init, y_init)
         # 1 N_supervision step
@@ -230,6 +231,17 @@ def main(cfg):
             q_acc = ((q_logits.reshape(-1) > 0) == puzzle_correct).mean(where=carry.halted)
             metrics["q_acc"] = q_acc
 
+        if ema_model is not None:
+            new_ema_state = jax.tree.map(
+                lambda new, old: (
+                    None if new is None else cfg.ema_weight * new + (1.0 - cfg.ema_weight) * old
+                ),
+                nnx.state(model),
+                nnx.state(ema_model),
+                is_leaf=lambda x: x is None,
+            )
+            nnx.update(ema_model, new_ema_state)
+
         return carry, metrics, key
     
     # init logging 
@@ -247,6 +259,9 @@ def main(cfg):
     initializer = jax.nn.initializers.truncated_normal(stddev=1.0)
     y_init = initializer(y_key, (cfg.model.hidden_dim,), jnp.bfloat16)
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
+    
+    if cfg.use_ema:
+        ema_model = nnx.clone(model)
 
     # init data loader
     train_data_loader = get_data_loader(
@@ -301,7 +316,9 @@ def main(cfg):
             carry, metrics, key = train_step(
                 model, optimizer, carry, batch, y_init, z_init,
                 cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
-                cfg.recursion.halt_explore_prob, key
+                cfg.recursion.halt_explore_prob,
+                ema_model if cfg.use_ema else None,
+                key
             )
         if jax.process_index() == 0 and step == 15:
             jax.profiler.stop_trace()
@@ -315,7 +332,8 @@ def main(cfg):
         
         if step > 0 and step % cfg.eval.eval_every == 0:
             val_metrics = evaluate(
-                model, val_data_loader_factory, y_init, z_init,
+                ema_model if cfg.use_ema else model,
+                val_data_loader_factory, y_init, z_init,
                 cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
                 cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size
             )
