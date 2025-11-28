@@ -23,7 +23,7 @@ def get_config():
     cfg.model.use_bias = False
     cfg.model.rope_theta = 10000 # none = learned
     cfg.model.puzzle_vocab_size = lambda: ((get_puzzle_vocab_size(cfg.data.data_dir) // 64) + 1) * 64
-    cfg.model.puzzle_emb_len = 1
+    cfg.model.puzzle_emb_len = 16
 
     #vision mode
     cfg.model.vision_mode = False
