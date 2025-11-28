@@ -13,7 +13,7 @@ def get_config():
     
     cfg.model.vocab_size = 12 # 10 colours, 1 border, 1 padding
     cfg.model.hidden_dim = 512
-    cfg.model.intermediate_dim = lambda: 4 * cfg.model.hidden_dim
+    cfg.model.intermediate_dim = 1536
     cfg.model.num_layers = 2
     cfg.model.num_attention_heads = 8
     cfg.model.num_key_value_heads = 8

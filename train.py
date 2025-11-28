@@ -254,7 +254,15 @@ def main(cfg):
         else:
             train_logger = MetricLogger(cfg.data.train_batch_size, prefix="train", buffer=True, wandb=None)
             val_logger = MetricLogger(cfg.data.eval_batch_size, prefix="val", buffer=False, wandb=None)
-        
+
+    # count params
+    _, params = nnx.split(model, nnx.Param)
+    num_params = sum(x.size for x in jax.tree_util.tree_leaves(params))
+    puzzle_emb_params = model.puzzle_emb.embedding.size
+    num_params -= puzzle_emb_params
+    print(f"{num_params=}, {puzzle_emb_params=}")
+    del params
+    
     # init latents
     key, y_key, z_key = jax.random.split(key, 3)
     initializer = jax.nn.initializers.truncated_normal(stddev=1.0)
