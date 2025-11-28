@@ -1,5 +1,5 @@
 import json
-
+import os
 import jax
 import grain
 import numpy as np
@@ -15,6 +15,29 @@ class JsonDataSource(grain.sources.RandomAccessDataSource):
     
     def __getitem__(self, index):
         return self.data[index]
+
+class NumpyDataSource(grain.sources.RandomAccessDataSource):
+    def __init__(self, file_path):
+        self.data = {
+            "inputs": np.load(os.path.join(file_path, "inputs.npy"), mmap_mode="r"),
+            "labels": np.load(os.path.join(file_path, "labels.npy"), mmap_mode="r"),
+            "aug_puzzle_idx": np.load(os.path.join(file_path, "aug_puzzle_idx.npy"), mmap_mode="r"),
+
+        }
+
+    def __len__(self):
+        return self.data["inputs"].shape[0]
+    
+    def __getitem__(self, index):
+        return {
+            "x": self.data["inputs"][index].astype(np.int32),
+            "y": self.data["labels"][index].astype(np.int32),
+            "aug_puzzle_idx": self.data["aug_puzzle_idx"][index],
+            "example_idx": index,
+            "colour_aug": [0], # placeholder for now
+            "d8_aug": 0, # placeholder for now
+            "puzzle_idx": 0 # placeholder for now
+        }
 
 
 class Parse(grain.transforms.Map):
@@ -77,7 +100,7 @@ class TranslateAndPad(grain.transforms.RandomMap):
 
 def get_data_loader(data_dir, batch_size, translate, max_grid_size, repeat=True, drop_remainder=True, shard_by_jax_process=False):
     per_process_batch_size = batch_size // jax.process_count()
-    data_source = JsonDataSource(data_dir)
+    data_source = NumpyDataSource(data_dir)
     sampler = grain.samplers.IndexSampler(
         len(data_source),
         seed=0,
@@ -87,7 +110,7 @@ def get_data_loader(data_dir, batch_size, translate, max_grid_size, repeat=True,
     )
     operations = [
         Parse(),
-        TranslateAndPad(translate=translate, max_grid_size=max_grid_size),
+        # TranslateAndPad(translate=translate, max_grid_size=max_grid_size),
         grain.transforms.Batch(batch_size=per_process_batch_size, drop_remainder=drop_remainder)
     ]
     return grain.DataLoader(data_source=data_source, operations=operations, sampler=sampler)

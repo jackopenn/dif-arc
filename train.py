@@ -179,12 +179,12 @@ def main(cfg):
         y_loss = stablemax_cross_entropy_with_integer_labels(
             y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float32),
             y_true.reshape(-1)
-        ).mean(where=y_true.reshape(-1) < 11)
+        ).mean(where=y_true.reshape(-1) > 0)
         if cfg.recursion.act:
             # TODO: only compute for halted ?
             q_loss = optax.sigmoid_binary_cross_entropy(
                 q_logits.reshape(-1),
-                (y_preds == y_true).all(axis=-1, where=y_true < 11)
+                (y_preds == y_true).all(axis=-1, where=y_true > 0)
             ).mean()
         else:
             q_loss = 0
@@ -213,8 +213,8 @@ def main(cfg):
 
         # compute metrics (11 = padding)
         cell_correct = y_preds == carry.y_true # (batch_size, 900)
-        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 11)
-        cell_acc = cell_correct.mean(where=(carry.y_true < 11) & (carry.halted[..., jnp.newaxis]))
+        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true > 0)
+        cell_acc = cell_correct.mean(where=(carry.y_true > 0) & (carry.halted[..., jnp.newaxis]))
         puzzle_acc = puzzle_correct.mean(where=carry.halted)
         metrics = {
             "loss": loss,
@@ -274,7 +274,7 @@ def main(cfg):
 
     # init data loader
     train_data_loader = get_data_loader(
-        cfg.data.data_dir + "/train.jsonl",
+        cfg.data.data_dir + "/train",
         cfg.data.train_batch_size,
         translate=cfg.data.translate,
         max_grid_size=cfg.data.max_grid_size,
@@ -283,7 +283,7 @@ def main(cfg):
         shard_by_jax_process=True
     )
     val_data_loader_factory = lambda: get_data_loader(
-        cfg.data.data_dir + "/test.jsonl",
+        cfg.data.data_dir + "/test",
         cfg.data.eval_batch_size,
         translate=False,
         max_grid_size=cfg.data.max_grid_size,
@@ -339,15 +339,15 @@ def main(cfg):
         if jax.process_index() == 0:
             train_logger.log({**metrics, "step_time": step_time, "step": step, "epoch": epoch})
         
-        if step > 0 and step % cfg.eval.eval_every == 0:
-            val_metrics = evaluate(
-                ema_model if cfg.use_ema else model,
-                val_data_loader_factory, y_init, z_init,
-                cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
-                cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size
-            )
-            if jax.process_index() == 0:
-                val_logger.log({**val_metrics, "step_time": step_time, "step": step, "epoch": epoch})
+        # if step > 0 and step % cfg.eval.eval_every == 0:
+        #     val_metrics = evaluate(
+        #         ema_model if cfg.use_ema else model,
+        #         val_data_loader_factory, y_init, z_init,
+        #         cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
+        #         cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size
+        #     )
+        #     if jax.process_index() == 0:
+        #         val_logger.log({**val_metrics, "step_time": step_time, "step": step, "epoch": epoch})
         
         # if step > 0 and step % cfg.log_every == 0:
         #     jax.experimental.multihost_utils.sync_global_devices("barrier")
