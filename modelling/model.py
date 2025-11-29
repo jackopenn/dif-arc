@@ -148,7 +148,7 @@ class Model(nnx.Module):
 
 
     def output_head(self, x):
-        x = x[:, self.puzzle_emb_len:]
+        x = x[:, self.puzzle_emb_len:, :]
         B, S, D = x.shape
         if self.vision_mode:
             x = x.reshape(B, self.input_size // self.patch_size, self.input_size // self.patch_size, D) # [batch_size, input_size//patch_size, input_size//patch_size, hidden_dim]
