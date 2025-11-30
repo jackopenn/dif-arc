@@ -60,7 +60,7 @@ def get_config():
     cfg.data.data_dir = "data/arc-agi-1-aug-100"
     cfg.data.train_batch_size = 4
     cfg.data.eval_batch_size = 4
-    cfg.data.translate = True
+    cfg.data.translate = "fixed"
     cfg.data.max_grid_size = 30
     
     cfg.parallel.n_devices = 1
