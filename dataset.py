@@ -48,13 +48,12 @@ class TranslateAndPad(grain.transforms.RandomMap):
         x, y = record["x"], record["y"]
 
         # top left corner
-        if self.translate:
-            if self.translate == "random":
-                pad_c = rng.integers(0, self.max_grid_size - max(x.shape[0], y.shape[0]) + 1)
-                pad_r = rng.integers(0, self.max_grid_size - max(x.shape[1], y.shape[1]) + 1)
-            elif self.translate == "fixed":
-                pad_c = np.random.default_rng(seed=record["aug_puzzle_idx"]).integers(0, self.max_grid_size - max(x.shape[0], y.shape[0]) + 1)
-                pad_r = np.random.default_rng(seed=record["aug_puzzle_idx"]).integers(0, self.max_grid_size - max(x.shape[1], y.shape[1]) + 1)
+        if self.translate == "random":
+            pad_c = rng.integers(0, self.max_grid_size - max(x.shape[0], y.shape[0]) + 1)
+            pad_r = rng.integers(0, self.max_grid_size - max(x.shape[1], y.shape[1]) + 1)
+        elif self.translate == "fixed":
+            pad_c = np.random.default_rng(seed=record["aug_puzzle_idx"]).integers(0, self.max_grid_size - max(x.shape[0], y.shape[0]) + 1)
+            pad_r = np.random.default_rng(seed=record["aug_puzzle_idx"]).integers(0, self.max_grid_size - max(x.shape[1], y.shape[1]) + 1)
         else:
             pad_c = 0
             pad_r = 0
