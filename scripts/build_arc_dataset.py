@@ -157,7 +157,9 @@ def main(cfg):
         base["colour_aug"] = np.arange(10)
         aug_puzzles.append(base)
         puzzle_hashes = {puzzle_hash(base)}
-
+        
+        # first augment has differnt idx to base
+        aug_puzzle_idx += 1
 
         # keep trying augs until unique n_augs
         for i in range(cfg.n_augs * cfg.aug_retry_factor):
