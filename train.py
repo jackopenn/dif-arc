@@ -324,6 +324,7 @@ def main(cfg):
     t0 = time.perf_counter()
     for step, batch in enumerate(train_data_loader):
         batch = jax.tree.map(jnp.asarray, batch)
+        print(batch["x"].shape, batch["y"].shape, batch["aug_puzzle_idx"].shape)
         batch = shard_data(batch)
         if step == 0:
             carry = init_carry(batch, z_init, y_init)
