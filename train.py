@@ -184,12 +184,12 @@ def main(cfg):
         y_loss = stablemax_cross_entropy_with_integer_labels(
             y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float64),
             y_true.reshape(-1)
-        ).mean(where=y_true.reshape(-1) > 0)
+        ).mean(where=y_true.reshape(-1) < 11)
         if cfg.recursion.act:
             # TODO: only compute for halted ?
             q_loss = optax.sigmoid_binary_cross_entropy(
                 q_logits.reshape(-1).astype(jnp.float32),
-                (y_preds == y_true).all(axis=-1, where=y_true > 0)
+                (y_preds == y_true).all(axis=-1, where=y_true < 11)
             ).mean()
         else:
             q_loss = 0
@@ -218,8 +218,8 @@ def main(cfg):
 
         # compute metrics (11 = padding)
         cell_correct = y_preds == carry.y_true # (batch_size, 900)
-        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true > 0)
-        cell_acc = cell_correct.mean(where=(carry.y_true > 0) & (carry.halted[..., jnp.newaxis]))
+        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 11)
+        cell_acc = cell_correct.mean(where=(carry.y_true < 11) & (carry.halted[..., jnp.newaxis]))
         puzzle_acc = puzzle_correct.mean(where=carry.halted)
         metrics = {
             "loss": loss,
