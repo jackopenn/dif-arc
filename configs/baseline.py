@@ -6,7 +6,8 @@ from sws import Config
 def get_config():
     
     def get_puzzle_vocab_size(data_dir):
-        return json.load(open(os.path.join(data_dir+"/train", "dataset.json"), 'r'))['num_puzzle_identifiers']
+        # return json.load(open(os.path.join(data_dir+"/train", "dataset.json"), 'r'))['num_puzzle_identifiers']
+        return json.load(open(os.path.join(data_dir, "metadata.json"), 'r'))['train']['num_aug_puzzles']
     
     cfg = Config()
     cfg.seed = 69420
