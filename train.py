@@ -279,8 +279,8 @@ def main(cfg):
 
     # init data loader
     train_data_loader = get_data_loader(
-        cfg.data.data_dir + "/train",
-        # cfg.data.data_dir + "/train.jsonl",
+        # cfg.data.data_dir + "/train",
+        cfg.data.data_dir + "/train.jsonl",
         cfg.data.train_batch_size,
         translate=cfg.data.translate,
         max_grid_size=cfg.data.max_grid_size,
@@ -295,7 +295,7 @@ def main(cfg):
     # )
     val_data_loader_factory = lambda: get_data_loader(
         cfg.data.data_dir + "/test",
-        # cfg.data.data_dir + "/test.jsonl",
+        cfg.data.data_dir + "/test.jsonl",
         cfg.data.eval_batch_size,
         translate=False,
         max_grid_size=cfg.data.max_grid_size,
