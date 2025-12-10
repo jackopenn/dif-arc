@@ -10,9 +10,9 @@ from sws import run
 import wandb
 import orbax.checkpoint as ocp
 from datetime import datetime
-# from datasets.dataset_v2 import get_data_loader
+from datasets.dataset_v2 import get_data_loader
 # from datasets.dataset import get_data_loader
-from datasets.torch_dataset import get_data_loader
+# from datasets.torch_dataset import get_data_loader
 from modelling.model import Model
 from modelling.optimizers import adamw_atan2, sign_sgdw
 from utils import MetricLogger
@@ -278,31 +278,31 @@ def main(cfg):
         ema_model = nnx.clone(model)
 
     # init data loader
-    # train_data_loader = get_data_loader(
-    #     cfg.data.data_dir + "/train",
-    #     # cfg.data.data_dir + "/train.jsonl",
-    #     cfg.data.train_batch_size,
-    #     translate=cfg.data.translate,
-    #     max_grid_size=cfg.data.max_grid_size,
-    #     repeat=True,
-    #     drop_remainder=True,
-    #     shard_by_jax_process=True
-    # )
-    train_data_loader, _ = get_data_loader(
-        cfg.data.data_dir,
-        "train",
-        cfg.data.train_batch_size
+    train_data_loader = get_data_loader(
+        cfg.data.data_dir + "/train",
+        # cfg.data.data_dir + "/train.jsonl",
+        cfg.data.train_batch_size,
+        translate=cfg.data.translate,
+        max_grid_size=cfg.data.max_grid_size,
+        repeat=True,
+        drop_remainder=True,
+        shard_by_jax_process=True
     )
-    # val_data_loader_factory = lambda: get_data_loader(
-    #     cfg.data.data_dir + "/test",
-    #     # cfg.data.data_dir + "/test.jsonl",
-    #     cfg.data.eval_batch_size,
-    #     translate=False,
-    #     max_grid_size=cfg.data.max_grid_size,
-    #     repeat=False,
-    #     drop_remainder=True,
-    #     shard_by_jax_process=True
-    # ) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
+    # train_data_loader, _ = get_data_loader(
+    #     cfg.data.data_dir,
+    #     "train",
+    #     cfg.data.train_batch_size
+    # )
+    val_data_loader_factory = lambda: get_data_loader(
+        cfg.data.data_dir + "/test",
+        # cfg.data.data_dir + "/test.jsonl",
+        cfg.data.eval_batch_size,
+        translate=False,
+        max_grid_size=cfg.data.max_grid_size,
+        repeat=False,
+        drop_remainder=True,
+        shard_by_jax_process=True
+    ) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
     # init checkpoint manager
     ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{os.getcwd()}/checkpoints/')
@@ -351,15 +351,15 @@ def main(cfg):
         if jax.process_index() == 0:
             train_logger.log({**metrics, "step_time": step_time, "step": step, "epoch": epoch})
         
-        # if step > 0 and step % cfg.eval.eval_every == 0:
-        #     val_metrics = evaluate(
-        #         ema_model if cfg.use_ema else model,
-        #         val_data_loader_factory, y_init, z_init,
-        #         cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
-        #         cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size
-        #     )
-        #     if jax.process_index() == 0:
-        #         val_logger.log({**val_metrics, "step_time": step_time, "step": step, "epoch": epoch})
+        if step > 0 and step % cfg.eval.eval_every == 0:
+            val_metrics = evaluate(
+                ema_model if cfg.use_ema else model,
+                val_data_loader_factory, y_init, z_init,
+                cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
+                cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size
+            )
+            if jax.process_index() == 0:
+                val_logger.log({**val_metrics, "step_time": step_time, "step": step, "epoch": epoch})
         
         # if step > 0 and step % cfg.log_every == 0:
         #     jax.experimental.multihost_utils.sync_global_devices("barrier")
