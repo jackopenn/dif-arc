@@ -124,9 +124,10 @@ def main(cfg):
     def post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, key):
         """update the halt flag if step >= N_supervision or q_logits > 0"""
         step = carry.step + 1
-        halted = jnp.where(step >= N_supervision, True, carry.halted)
+        # halted = jnp.where(step >= N_supervision, True, carry.halted)
+        halted = step >= N_supervision
         if cfg.recursion.act:
-            halted = jnp.where(q_logits.reshape(-1) > 0, True, halted)
+            halted = halted | (q_logits.reshape(-1) > 0)
         if halt_explore_prob > 0:
             key, subkey, subkey2 = jax.random.split(key, 3)
             min_halt_steps = (
@@ -187,7 +188,7 @@ def main(cfg):
         if cfg.recursion.act:
             # TODO: only compute for halted ?
             q_loss = optax.sigmoid_binary_cross_entropy(
-                q_logits.reshape(-1),
+                q_logits.reshape(-1).astype(jnp.float32),
                 (y_preds == y_true).all(axis=-1, where=y_true > 0)
             ).mean()
         else:
@@ -330,7 +331,6 @@ def main(cfg):
         batch = shard_data(batch)
         if step == 0:
             carry = init_carry(batch, z_init, y_init)
-
         if jax.process_index() == 0 and step == 10: 
             jax.profiler.start_trace(trace_dir, profiler_options=profiler_options)
         with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
