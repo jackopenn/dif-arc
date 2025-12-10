@@ -294,7 +294,7 @@ def main(cfg):
     #     cfg.data.train_batch_size
     # )
     val_data_loader_factory = lambda: get_data_loader(
-        cfg.data.data_dir + "/test",
+        # cfg.data.data_dir + "/test",
         cfg.data.data_dir + "/test.jsonl",
         cfg.data.eval_batch_size,
         translate=False,
