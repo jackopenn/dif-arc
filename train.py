@@ -10,7 +10,9 @@ from sws import run
 import wandb
 import orbax.checkpoint as ocp
 from datetime import datetime
-from dataset import get_data_loader
+# from datasets.dataset_v2 import get_data_loader
+from datasets.dataset import get_data_loader
+# from datasets.torch_dataset import get_data_loader
 from modelling.model import Model
 from modelling.optimizers import adamw_atan2, sign_sgdw
 from utils import MetricLogger
@@ -19,6 +21,8 @@ from evaluate import evaluate
  # TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
  
 def main(cfg):
+    jax.config.update('jax_enable_x64', True)
+
     if cfg.parallel.n_devices > 1:
         jax.distributed.initialize()
     if jax.process_index() == 0:
@@ -120,9 +124,10 @@ def main(cfg):
     def post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, key):
         """update the halt flag if step >= N_supervision or q_logits > 0"""
         step = carry.step + 1
-        halted = jnp.where(step >= N_supervision, True, carry.halted)
+        # halted = jnp.where(step >= N_supervision, True, carry.halted)
+        halted = step >= N_supervision
         if cfg.recursion.act:
-            halted = jnp.where(q_logits.reshape(-1) > 0, True, halted)
+            halted = halted | (q_logits.reshape(-1) > 0)
         if halt_explore_prob > 0:
             key, subkey, subkey2 = jax.random.split(key, 3)
             min_halt_steps = (
@@ -141,7 +146,7 @@ def main(cfg):
         ), key
 
     
-    def stablemax_cross_entropy_with_integer_labels(logits, labels, eps=1e-10):
+    def stablemax_cross_entropy_with_integer_labels(logits, labels, eps=1e-30):
         pos = jnp.log(jnp.maximum(logits, 0.) + 1.0 + eps)
         neg = -jnp.log(jnp.maximum(1.0 - logits, eps))
 
@@ -177,13 +182,13 @@ def main(cfg):
         y_preds = jnp.argmax(y_logits, axis=-1)
         # compute losses
         y_loss = stablemax_cross_entropy_with_integer_labels(
-            y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float32),
+            y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float64),
             y_true.reshape(-1)
         ).mean(where=y_true.reshape(-1) < 11)
         if cfg.recursion.act:
             # TODO: only compute for halted ?
             q_loss = optax.sigmoid_binary_cross_entropy(
-                q_logits.reshape(-1),
+                q_logits.reshape(-1).astype(jnp.float32),
                 (y_preds == y_true).all(axis=-1, where=y_true < 11)
             ).mean()
         else:
@@ -274,6 +279,7 @@ def main(cfg):
 
     # init data loader
     train_data_loader = get_data_loader(
+        # cfg.data.data_dir + "/train",
         cfg.data.data_dir + "/train.jsonl",
         cfg.data.train_batch_size,
         translate=cfg.data.translate,
@@ -282,7 +288,13 @@ def main(cfg):
         drop_remainder=True,
         shard_by_jax_process=True
     )
+    # train_data_loader, _ = get_data_loader(
+    #     cfg.data.data_dir,
+    #     "train",
+    #     cfg.data.train_batch_size
+    # )
     val_data_loader_factory = lambda: get_data_loader(
+        # cfg.data.data_dir + "/test",
         cfg.data.data_dir + "/test.jsonl",
         cfg.data.eval_batch_size,
         translate=False,
@@ -308,17 +320,17 @@ def main(cfg):
     profiler_options.host_tracer_level = 3
     trace_dir = f"profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
-    steps_per_epoch = ceil(len(train_data_loader._data_source) / cfg.data.train_batch_size)
-    print(f"{steps_per_epoch=}")
+    # steps_per_epoch = ceil(len(train_data_loader._data_source) / cfg.data.train_batch_size)
+    # print(f"{steps_per_epoch=}")
     epoch = 0
 
+    import numpy as np
     t0 = time.perf_counter()
     for step, batch in enumerate(train_data_loader):
+        # batch = jax.tree.map(np.asarray, batch)
         batch = shard_data(batch)
-
         if step == 0:
             carry = init_carry(batch, z_init, y_init)
-
         if jax.process_index() == 0 and step == 10: 
             jax.profiler.start_trace(trace_dir, profiler_options=profiler_options)
         with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
@@ -360,8 +372,8 @@ def main(cfg):
         #     if jax.process_index() == 0 and cfg.wandb:
         #         wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
 
-        if step > 0 and step % steps_per_epoch == 0:
-            epoch += 1
+        # if step > 0 and step % steps_per_epoch == 0:
+        #     epoch += 1
 
 if __name__ == "__main__":
     run(main)
