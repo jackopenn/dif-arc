@@ -20,10 +20,11 @@ from evaluate import evaluate
  # TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
  
 def main(cfg):
-    key = jax.random.key(cfg.seed)
 
     if cfg.parallel.n_devices > 1:
         jax.distributed.initialize()
+
+    key = jax.random.key(cfg.seed)
     
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
 
