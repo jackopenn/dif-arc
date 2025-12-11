@@ -270,8 +270,6 @@ def main(cfg):
     y_init = initializer(y_key, (cfg.model.hidden_dim,), jnp.bfloat16)
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
     
-    if cfg.use_ema:
-        ema_model = nnx.clone(model)
 
     # init data loader
     train_data_loader = get_data_loader(
@@ -314,19 +312,25 @@ def main(cfg):
             y_init=ocp.args.ArrayRestore(y_init),
             model_state=ocp.args.StandardRestore(abstract_model_state),
             optim_state=ocp.args.StandardRestore(abstract_optim_state),
-            data_loader=grain.checkpoint.CheckpointRestore(train_iter),
+            # data_loader=grain.checkpoint.CheckpointRestore(train_iter),
         )
-        print(ckpt_mngr.latest_step())
+        if cfg.use_ema:
+            restore_args.ema_model = ocp.args.StandardRestore(abstract_model_state)
         restored = ckpt_mngr.restore(ckpt_mngr.latest_step(), args=restore_args)
         step = ckpt_mngr.latest_step() + 1
         nnx.update(model, restored.model_state)
         nnx.update(optimizer, restored.optim_state)
+        if cfg.use_ema:
+            ema_model = nnx.clone(model)
+            nnx.update(ema_model, restored.ema_model)
+
         z_init = restored.z_init
         y_init = restored.y_init
-        train_iter = restored.data_loader
+        # train_iter = restored.data_loader
     else:
         step = 0
-
+        if cfg.use_ema:
+            ema_model = nnx.clone(model)
 
     carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
 
@@ -366,16 +370,16 @@ def main(cfg):
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step})
         
         if step > 0 and step % cfg.log_every == 0:
-            ckpt_mngr.save(
-                step,
-                args=ocp.args.Composite(
-                    z_init=ocp.args.ArraySave(z_init),
-                    y_init=ocp.args.ArraySave(y_init),
-                    model_state=ocp.args.StandardSave(nnx.state(model)),
-                    optim_state=ocp.args.StandardSave(nnx.state(optimizer)),
-                    data_loader=grain.checkpoint.CheckpointSave(train_iter),
-                )
+            args = ocp.args.Composite(
+                z_init=ocp.args.ArraySave(z_init),
+                y_init=ocp.args.ArraySave(y_init),
+                model_state=ocp.args.StandardSave(nnx.state(model)),
+                optim_state=ocp.args.StandardSave(nnx.state(optimizer)),
+                # data_loader=grain.checkpoint.CheckpointSave(train_iter),
             )
+            if cfg.ema_model:
+                args.ema_model = ocp.args.StandardSave(nnx.state(ema_model))
+            ckpt_mngr.save(step, args=args)
             if jax.process_index() == 0 and cfg.wandb:
                 ckpt_mngr.wait_until_finished()
                 wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
