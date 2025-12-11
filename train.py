@@ -377,7 +377,7 @@ def main(cfg):
                 optim_state=ocp.args.StandardSave(nnx.state(optimizer)),
                 # data_loader=grain.checkpoint.CheckpointSave(train_iter),
             )
-            if cfg.ema_model:
+            if cfg.use_ema:
                 args.ema_model = ocp.args.StandardSave(nnx.state(ema_model))
             ckpt_mngr.save(step, args=args)
             if jax.process_index() == 0 and cfg.wandb:
