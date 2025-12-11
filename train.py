@@ -323,17 +323,15 @@ def main(cfg):
         z_init = restored.z_init
         y_init = restored.y_init
         train_iter = restored.data_loader
-        carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
     else:
         step = 0
 
 
+    carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
+
     t0 = time.perf_counter()
     while step < cfg.max_steps:
         batch = shard_data(next(train_iter))
-
-        if step == 0: 
-            carry = init_carry(batch, z_init, y_init)
 
         if jax.process_index() == 0 and step == 10: 
             jax.profiler.start_trace(profile_dir, profiler_options=profiler_options)
