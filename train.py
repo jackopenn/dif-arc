@@ -292,8 +292,10 @@ def main(cfg):
     ) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
     # init checkpoint manager
-    # ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{os.getcwd()}/checkpoints/')
-    ckpt_dir = f'{os.getcwd()}/checkpoints/'
+    if cfg.restore_from_checkpoint:
+        ckpt_dir = f'{os.getcwd()}/checkpoints/'
+    else:
+        ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{os.getcwd()}/checkpoints/')
     ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
     ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
 
@@ -380,8 +382,8 @@ def main(cfg):
             if cfg.use_ema:
                 args["ema_model"] = ocp.args.StandardSave(nnx.state(ema_model))
             ckpt_mngr.save(step, args=ocp.args.Composite(**args))
+            ckpt_mngr.wait_until_finished()
             if jax.process_index() == 0 and cfg.wandb:
-                ckpt_mngr.wait_until_finished()
                 wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
         
         step += 1
