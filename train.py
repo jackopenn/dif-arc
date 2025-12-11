@@ -235,7 +235,7 @@ def main(cfg):
         if ema_model is not None:
             new_ema_state = jax.tree.map(
                 lambda new, old: (
-                    None if new is None else cfg.ema_weight * new + (1.0 - cfg.ema_weight) * old
+                    None if new is None else (1.0 - cfg.ema_weight) * new + cfg.ema_weight * old
                 ),
                 nnx.state(model),
                 nnx.state(ema_model),
