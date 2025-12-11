@@ -72,5 +72,6 @@ def get_config():
     cfg.log_every = 100
     
     cfg.restore_from_checkpoint = True
+    cfg.ckpt_dir = "checkpoints"  # Use GCS path for multi-host TPU pods
 
     return cfg

@@ -72,5 +72,6 @@ def get_config():
     cfg.log_every = lambda: cfg.eval.eval_every
     
     cfg.restore_from_checkpoint = False
+    cfg.ckpt_dir = "gs://trm-jax-123" 
 
     return cfg

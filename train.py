@@ -292,10 +292,11 @@ def main(cfg):
     ) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
     # init checkpoint manager
-    if cfg.restore_from_checkpoint:
-        ckpt_dir = f'{os.getcwd()}/checkpoints/'
-    else:
-        ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{os.getcwd()}/checkpoints/')
+    # if cfg.restore_from_checkpoint:
+    #     ckpt_dir = f'{os.getcwd()}/checkpoints/'
+    # else:
+    #     ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{os.getcwd()}/checkpoints/')
+    ckpt_dir = ocp.test_utils.erase_and_create_empty(f"{cfg.ckpt_dir}/{wandb.run.id}")
     ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
     ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
 
