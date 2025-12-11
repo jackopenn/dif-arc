@@ -370,7 +370,7 @@ def main(cfg):
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step})
         
         if step > 0 and step % cfg.log_every == 0:
-            args = ocp.args.Composite(
+            args = dict(
                 z_init=ocp.args.ArraySave(z_init),
                 y_init=ocp.args.ArraySave(y_init),
                 model_state=ocp.args.StandardSave(nnx.state(model)),
@@ -378,8 +378,8 @@ def main(cfg):
                 # data_loader=grain.checkpoint.CheckpointSave(train_iter),
             )
             if cfg.use_ema:
-                args.ema_model = ocp.args.StandardSave(nnx.state(ema_model))
-            ckpt_mngr.save(step, args=args)
+                args["ema_model"] = ocp.args.StandardSave(nnx.state(ema_model))
+            ckpt_mngr.save(step, args=ocp.args.Composite(**args))
             if jax.process_index() == 0 and cfg.wandb:
                 ckpt_mngr.wait_until_finished()
                 wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
