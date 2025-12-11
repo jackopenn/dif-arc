@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 class JsonDataSource(grain.sources.RandomAccessDataSource):
     def __init__(self, file_path):
+        self.file_path = file_path
         self.data = [json.loads(line.strip()) for line in tqdm(open(file_path, 'r').readlines())]
 
     def __len__(self):
@@ -15,6 +16,9 @@ class JsonDataSource(grain.sources.RandomAccessDataSource):
     
     def __getitem__(self, index):
         return self.data[index]
+    
+    def __repr__(self) -> str:
+        return f"RangeDataSource(file_path={self.file_path})"
 
 
 class Parse(grain.transforms.Map):

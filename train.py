@@ -1,4 +1,5 @@
 import time
+import grain
 from math import ceil
 import os
 import jax
@@ -19,13 +20,10 @@ from evaluate import evaluate
  # TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
  
 def main(cfg):
-    # jax.config.update('jax_enable_x64', True)
+    key = jax.random.key(cfg.seed)
 
     if cfg.parallel.n_devices > 1:
         jax.distributed.initialize()
-    if jax.process_index() == 0:
-        print(jax.devices())
-    key = jax.random.key(cfg.seed)
     
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
 
@@ -44,7 +42,6 @@ def main(cfg):
         },
         lambda state: jax.tree.map_with_path(lambda path, _: "embed" if path[0].key == "puzzle_emb" else "other", state)
     )
-
     optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
     
     shard_data = lambda data: data
@@ -60,6 +57,7 @@ def main(cfg):
 
         _, model_state = nnx.split(model)
         sharded_model_state = jax.lax.with_sharding_constraint(model_state, repl_sharding)
+        # fsdp on puzzle embs
         sharded_model_state.puzzle_emb = jax.lax.with_sharding_constraint(sharded_model_state.puzzle_emb, data_sharding)
         nnx.update(model, sharded_model_state)
         
@@ -295,34 +293,50 @@ def main(cfg):
     ) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
     # init checkpoint manager
-    ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{os.getcwd()}/checkpoints/')
-    ckpt_options = ocp.CheckpointManagerOptions(
-        max_to_keep=1,
-        best_fn = lambda x: x,
-        best_mode="max",
-        cleanup_tmp_directories=True,
-        enable_async_checkpointing=False # otherwise wandb logging fails
-    )
+    # ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{os.getcwd()}/checkpoints/')
+    ckpt_dir = f'{os.getcwd()}/checkpoints/'
+    ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
     ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
 
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
     profiler_options.host_tracer_level = 3
-    trace_dir = f"profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
-    steps_per_epoch = ceil(len(train_data_loader._data_source) / cfg.data.train_batch_size)
-    print(f"{steps_per_epoch=}")
-    epoch = 0
+    profile_dir = f"profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+
+    train_iter = iter(train_data_loader)
+    if cfg.restore_from_checkpoint:
+        abstract_model_state = nnx.state(nnx.eval_shape(lambda: model))
+        abstract_optim_state = nnx.state(nnx.eval_shape(lambda: optimizer))
+        restore_args = ocp.args.Composite(
+            z_init=ocp.args.ArrayRestore(z_init),
+            y_init=ocp.args.ArrayRestore(y_init),
+            model_state=ocp.args.StandardRestore(abstract_model_state),
+            optim_state=ocp.args.StandardRestore(abstract_optim_state),
+            data_loader=grain.checkpoint.CheckpointRestore(train_iter),
+        )
+        print(ckpt_mngr.latest_step())
+        restored = ckpt_mngr.restore(ckpt_mngr.latest_step(), args=restore_args)
+        step = ckpt_mngr.latest_step() + 1
+        nnx.update(model, restored.model_state)
+        nnx.update(optimizer, restored.optim_state)
+        z_init = restored.z_init
+        y_init = restored.y_init
+        train_iter = restored.data_loader
+        carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
+    else:
+        step = 0
+
 
     t0 = time.perf_counter()
-    for step, batch in enumerate(train_data_loader):
-        batch = shard_data(batch)
+    while step < cfg.max_steps:
+        batch = shard_data(next(train_iter))
 
-        if step == 0:
+        if step == 0: 
             carry = init_carry(batch, z_init, y_init)
 
         if jax.process_index() == 0 and step == 10: 
-            jax.profiler.start_trace(trace_dir, profiler_options=profiler_options)
+            jax.profiler.start_trace(profile_dir, profiler_options=profiler_options)
         with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
             carry, metrics, key = train_step(
                 model, optimizer, carry, batch, y_init, z_init,
@@ -333,13 +347,14 @@ def main(cfg):
             )
         if jax.process_index() == 0 and step == 15:
             jax.profiler.stop_trace()
-            wandb.log_artifact(f"{os.getcwd()}/{trace_dir}/", name=f"run_{wandb.run.id}_trace", type="trace")
+            if cfg.wandb:
+                wandb.log_artifact(f"{os.getcwd()}/{profile_dir}/", name=f"run_{wandb.run.id}_profile", type="profile")
 
         step_time = time.perf_counter() - t0
         t0 = time.perf_counter()
         
         if jax.process_index() == 0:
-            train_logger.log({**metrics, "step_time": step_time, "step": step, "epoch": epoch})
+            train_logger.log({**metrics, "step_time": step_time, "step": step})
         
         if step > 0 and step % cfg.eval.eval_every == 0:
             val_metrics = evaluate(
@@ -349,21 +364,25 @@ def main(cfg):
                 cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size
             )
             if jax.process_index() == 0:
-                val_logger.log({**val_metrics, "step_time": step_time, "step": step, "epoch": epoch})
+                val_logger.log({**val_metrics, "step_time": step_time, "step": step})
         
-        # if step > 0 and step % cfg.log_every == 0:
-        #     jax.experimental.multihost_utils.sync_global_devices("barrier")
-        #     _, state = nnx.split(model)
-        #     try:
-        #         checkpoint_metric = val_metrics["puzzle_acc"]
-        #     except UnboundLocalError: # if checkpoint_every < eval_every, then val_metrics is not defined
-        #         checkpoint_metric = 0
-        #     ckpt_mngr.save(step, metrics=checkpoint_metric, args=ocp.args.StandardSave(state))
-        #     if jax.process_index() == 0 and cfg.wandb:
-        #         wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
+        if step > 0 and step % cfg.log_every == 0:
+            ckpt_mngr.save(
+                step,
+                args=ocp.args.Composite(
+                    z_init=ocp.args.ArraySave(z_init),
+                    y_init=ocp.args.ArraySave(y_init),
+                    model_state=ocp.args.StandardSave(nnx.state(model)),
+                    optim_state=ocp.args.StandardSave(nnx.state(optimizer)),
+                    data_loader=grain.checkpoint.CheckpointSave(train_iter),
+                )
+            )
+            if jax.process_index() == 0 and cfg.wandb:
+                ckpt_mngr.wait_until_finished()
+                wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
+        
+        step += 1
 
-        if step > 0 and step % steps_per_epoch == 0:
-            epoch += 1
 
 if __name__ == "__main__":
     run(main)
