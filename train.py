@@ -19,6 +19,8 @@ from evaluate import evaluate
  # TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
  
 def main(cfg):
+    jax.config.update('jax_enable_x64', True)
+
     if cfg.parallel.n_devices > 1:
         jax.distributed.initialize()
     if jax.process_index() == 0:
@@ -120,9 +122,9 @@ def main(cfg):
     def post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, key):
         """update the halt flag if step >= N_supervision or q_logits > 0"""
         step = carry.step + 1
-        halted = jnp.where(step >= N_supervision, True, carry.halted)
+        halted = step >= N_supervision
         if cfg.recursion.act:
-            halted = jnp.where(q_logits.reshape(-1) > 0, True, halted)
+            halted = halted | (q_logits.reshape(-1) > 0)
         if halt_explore_prob > 0:
             key, subkey, subkey2 = jax.random.split(key, 3)
             min_halt_steps = (
@@ -141,7 +143,7 @@ def main(cfg):
         ), key
 
     
-    def stablemax_cross_entropy_with_integer_labels(logits, labels, eps=1e-10):
+    def stablemax_cross_entropy_with_integer_labels(logits, labels, eps=1e-30):
         pos = jnp.log(jnp.maximum(logits, 0.) + 1.0 + eps)
         neg = -jnp.log(jnp.maximum(1.0 - logits, eps))
 
@@ -177,13 +179,13 @@ def main(cfg):
         y_preds = jnp.argmax(y_logits, axis=-1)
         # compute losses
         y_loss = stablemax_cross_entropy_with_integer_labels(
-            y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float32),
+            y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float64),
             y_true.reshape(-1)
         ).mean(where=y_true.reshape(-1) < 11)
         if cfg.recursion.act:
             # TODO: only compute for halted ?
             q_loss = optax.sigmoid_binary_cross_entropy(
-                q_logits.reshape(-1),
+                q_logits.reshape(-1).astype(jnp.float32),
                 (y_preds == y_true).all(axis=-1, where=y_true < 11)
             ).mean()
         else:
