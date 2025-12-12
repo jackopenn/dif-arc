@@ -307,7 +307,7 @@ def main(cfg):
     if cfg.restore_from_checkpoint:
         abstract_model_state = nnx.state(nnx.eval_shape(lambda: model))
         abstract_optim_state = nnx.state(nnx.eval_shape(lambda: optimizer))
-        restore_args = ocp.args.Composite(
+        restore_args = dict(
             z_init=ocp.args.ArrayRestore(z_init),
             y_init=ocp.args.ArrayRestore(y_init),
             model_state=ocp.args.StandardRestore(abstract_model_state),
@@ -315,8 +315,8 @@ def main(cfg):
             # data_loader=grain.checkpoint.CheckpointRestore(train_iter),
         )
         if cfg.use_ema:
-            restore_args.ema_model = ocp.args.StandardRestore(abstract_model_state)
-        restored = ckpt_mngr.restore(ckpt_mngr.latest_step(), args=restore_args)
+            restore_args["ema_model"] = ocp.args.StandardRestore(abstract_model_state)
+        restored = ckpt_mngr.restore(ckpt_mngr.latest_step(), args=ocp.args.Composite(**restore_args))
         step = ckpt_mngr.latest_step() + 1
         nnx.update(model, restored.model_state)
         nnx.update(optimizer, restored.optim_state)
