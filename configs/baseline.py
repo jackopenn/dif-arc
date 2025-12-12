@@ -55,7 +55,7 @@ def get_config():
     cfg.other_schedule.peak_value = 1e-4
     cfg.other_schedule.warmup_steps = warmup_steps
 
-    cfg.max_steps = 100_000
+    cfg.max_steps = 1_000_000
 
     cfg.data.data_dir = "data/arc-agi-1-aug-concept-1000"
     cfg.data.train_batch_size = 768
@@ -71,7 +71,7 @@ def get_config():
     cfg.eval.eval_every = 10_000
     cfg.log_every = lambda: cfg.eval.eval_every
     
-    cfg.restore_from_checkpoint = False
+    cfg.restore_from_checkpoint = True
     cfg.ckpt_dir = "gs://trm-jax-123" 
 
     return cfg

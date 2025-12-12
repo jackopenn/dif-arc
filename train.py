@@ -335,7 +335,7 @@ def main(cfg):
     carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
 
     t0 = time.perf_counter()
-    while step < cfg.max_steps:
+    while step < cfg.max_steps + 1:
         batch = shard_data(next(train_iter))
 
         if jax.process_index() == 0 and step == 10: 
@@ -358,18 +358,8 @@ def main(cfg):
         
         if jax.process_index() == 0:
             train_logger.log({**metrics, "step_time": step_time, "step": step})
-        
-        if step > 0 and step % cfg.eval.eval_every == 0:
-            val_metrics = evaluate(
-                ema_model if cfg.use_ema else model,
-                val_data_loader_factory, y_init, z_init,
-                cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
-                cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size
-            )
-            if jax.process_index() == 0:
-                val_logger.log({**val_metrics, "step_time": step_time, "step": step})
-        
-        if step > 0 and step % cfg.log_every == 0:
+
+        if step % cfg.log_every == 0:
             args = dict(
                 z_init=ocp.args.ArraySave(z_init),
                 y_init=ocp.args.ArraySave(y_init),
@@ -382,7 +372,17 @@ def main(cfg):
             ckpt_mngr.save(step, args=ocp.args.Composite(**args))
             ckpt_mngr.wait_until_finished()
             if jax.process_index() == 0 and cfg.wandb:
-                wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
+                wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])    
+
+        if step > 0 and step % cfg.eval.eval_every == 0:
+            val_metrics = evaluate(
+                ema_model if cfg.use_ema else model,
+                val_data_loader_factory, y_init, z_init,
+                cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
+                cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size
+            )
+            if jax.process_index() == 0:
+                val_logger.log({**val_metrics, "step_time": step_time, "step": step})
         
         step += 1
 
