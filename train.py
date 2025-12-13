@@ -359,7 +359,7 @@ def main(cfg):
         if jax.process_index() == 0:
             train_logger.log({**metrics, "step_time": step_time, "step": step})
 
-        if step % cfg.log_every == 0:
+        if step > 0 and step % cfg.log_every == 0:
             args = dict(
                 z_init=ocp.args.ArraySave(z_init),
                 y_init=ocp.args.ArraySave(y_init),
