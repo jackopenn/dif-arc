@@ -174,7 +174,7 @@ def main(cfg):
         # forward pass
         x = model.input_embedding(x_input, aug_puzzle_idx)
         y, z = latent_recursion(model, x, y, z, n)
-        y_logits, q_logits = model.output_head(y), model.q_head(z)
+        y_logits, q_logits = model.output_head(y), model.q_head(y)
         y_preds = jnp.argmax(y_logits, axis=-1)
         # compute losses
         y_loss = stablemax_cross_entropy_with_integer_labels(
