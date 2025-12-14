@@ -20,7 +20,6 @@ from evaluate import evaluate
  # TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
  
 def main(cfg):
-    jax.config.update("jax_enable_x64", True)
 
     if cfg.parallel.n_devices > 1:
         jax.distributed.initialize()
