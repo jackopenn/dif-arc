@@ -25,10 +25,11 @@ def get_config():
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
     cfg.model.puzzle_emb_len = 1
     
+    cfg.model.input_size = 30
+    
     #vision mode
     cfg.model.vision_mode = False
     cfg.model.patch_size = None
-    cfg.model.input_size = None
     
     cfg.recursion.N_supervision = 2
     cfg.recursion.n = 2
@@ -61,17 +62,17 @@ def get_config():
     cfg.data.train_batch_size = 4
     cfg.data.eval_batch_size = 4
     cfg.data.translate = "fixed"
-    cfg.data.max_grid_size = 30
+    cfg.data.max_grid_size = lambda: cfg.model.input_size
     
     cfg.parallel.n_devices = 1
 
-    cfg.wandb = True
+    cfg.wandb = False
     
     cfg.eval.pass_ks = [1, 2, 5, 10, 100, 1000]
     cfg.eval.eval_every = 100
     cfg.log_every = 100
     
-    cfg.restore_from_checkpoint = True
+    cfg.restore_from_checkpoint = False
     cfg.ckpt_dir = "checkpoints"  # Use GCS path for multi-host TPU pods
 
     return cfg

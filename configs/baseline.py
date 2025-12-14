@@ -25,14 +25,15 @@ def get_config():
     cfg.model.puzzle_vocab_size = lambda: ((get_puzzle_vocab_size(cfg.data.data_dir) // 64) + 1) * 64
     cfg.model.puzzle_emb_len = 1
 
+    cfg.model.input_size = 30
+
     #vision mode
     cfg.model.vision_mode = False
     cfg.model.patch_size = None
-    cfg.model.input_size = None
 
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 4
-    cfg.recursion.T = 2
+    cfg.recursion.T = 3
     cfg.recursion.act = True
     cfg.recursion.halt_explore_prob = 0.1
     
@@ -57,11 +58,11 @@ def get_config():
 
     cfg.max_steps = 1_000_000
 
-    cfg.data.data_dir = "data/arc-agi-1-aug-concept-1000"
+    cfg.data.data_dir = "data/arc-agi-2-aug-concept-1000"
     cfg.data.train_batch_size = 768
     cfg.data.eval_batch_size = 768
     cfg.data.translate = "fixed"
-    cfg.data.max_grid_size = 30
+    cfg.data.max_grid_size = lambda: cfg.model.input_size
 
     cfg.parallel.n_devices = 16
     
