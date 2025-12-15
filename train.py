@@ -31,8 +31,9 @@ def main(cfg):
     opt_fn = adamw_atan2 if cfg.optim.use_atan2 else optax.adamw
     tx = optax.partition(
         {
-            "embed": sign_sgdw(
-                optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()), cfg.optim.weight_decay
+            "puzzle_emb": sign_sgdw(
+                optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()),
+                cfg.optim.weight_decay
             ),
             "other": opt_fn(
                 optax.warmup_constant_schedule(**cfg.other_schedule.to_dict()),
@@ -41,7 +42,7 @@ def main(cfg):
                 weight_decay=cfg.optim.weight_decay,
             )
         },
-        lambda state: jax.tree.map_with_path(lambda path, _: "embed" if path[0].key == "puzzle_emb" else "other", state)
+        lambda state: jax.tree.map_with_path(lambda path, _: "puzzle_emb" if path[0].key == "puzzle_emb" else "other", state)
     )
     optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
     
