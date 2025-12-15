@@ -20,6 +20,7 @@ from evaluate import evaluate
  # TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
  
 def main(cfg):
+    
 
     if cfg.parallel.n_devices > 1:
         jax.distributed.initialize()
@@ -220,9 +221,9 @@ def main(cfg):
         y_logits, q_logits = model.output_head(y), model.q_head(y)
         y_preds = jnp.argmax(y_logits, axis=-1)
         # compute losses
-        # y_loss = stablemax_cross_entropy_with_integer_labels(
-        y_loss = optax.softmax_cross_entropy_with_integer_labels(
-            y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float32),
+        y_loss = stablemax_cross_entropy_with_integer_labels(
+        # y_loss = optax.softmax_cross_entropy_with_integer_labels(
+            y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float64),
             y_true.reshape(-1)
         ).mean(where=y_true.reshape(-1) < 11)
         if cfg.recursion.act:
