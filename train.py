@@ -374,13 +374,17 @@ def main(cfg):
         if cfg.use_ema:
             ema_model = nnx.clone(model)
 
-    carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
+    # carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
 
 
     import numpy as np
     t0 = time.perf_counter()
     while step < cfg.max_steps + 1:
-        batch = shard_data(next(train_iter))
+        batch = next(train_iter)
+        batch = jax.tree.map(np.asarray, batch)
+        batch = shard_data(batch)
+        if step == 0:
+            carry = init_carry(batch, z_init, y_init)
 
         if jax.process_index() == 0 and step == 10: 
             jax.profiler.start_trace(profile_dir, profiler_options=profiler_options)
