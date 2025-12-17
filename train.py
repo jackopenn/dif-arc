@@ -382,6 +382,7 @@ def main(cfg):
     while step < cfg.max_steps + 1:
         batch = next(train_iter)
         batch = jax.tree.map(np.asarray, batch)
+        batch['aug_puzzle_idx'] = batch['aug_puzzle_idx'].reshape(-1)
         batch = shard_data(batch)
         if step == 0:
             carry = init_carry(batch, z_init, y_init)
