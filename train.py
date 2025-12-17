@@ -35,13 +35,13 @@ def main(cfg):
         {
             "puzzle_emb": sign_sgdw(
                 optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()),
-                cfg.optim.weight_decay
+                cfg.optim.puzzle_emb_weight_decay
             ),
             "other": opt_fn(
                 optax.warmup_constant_schedule(**cfg.other_schedule.to_dict()),
                 b1=cfg.optim.b1,
                 b2=cfg.optim.b2,
-                weight_decay=cfg.optim.weight_decay,
+                weight_decay=cfg.optim.other_weight_decay,
             )
         },
         lambda state: jax.tree.map_with_path(lambda path, _: "puzzle_emb" if path[0].key == "puzzle_emb" else "other", state)
