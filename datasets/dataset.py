@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 class JsonDataSource(grain.sources.RandomAccessDataSource):
     def __init__(self, file_path):
+        self.file_path = file_path
         self.data = [json.loads(line.strip()) for line in tqdm(open(file_path, 'r').readlines())]
 
     def __len__(self):
@@ -15,6 +16,9 @@ class JsonDataSource(grain.sources.RandomAccessDataSource):
     
     def __getitem__(self, index):
         return self.data[index]
+    
+    def __repr__(self) -> str:
+        return f"JsonDataSource(file_path={self.file_path})"
 
 
 class Parse(grain.transforms.Map):
@@ -25,7 +29,7 @@ class Parse(grain.transforms.Map):
             "colour_aug": np.asarray(record["colour_aug"]),
             "d8_aug": np.asarray([record["d8_aug"]]),
             "example_idx": np.asarray([record["example_idx"]]),
-            "aug_puzzle_idx": np.asarray([record["aug_puzzle_idx"]]),
+            "aug_puzzle_idx": np.asarray(record["aug_puzzle_idx"]),
             # "puzzle_id": np.asarray([record["puzzle_id"]]),
             "puzzle_idx": np.asarray([record["puzzle_idx"]]),
         }
@@ -52,8 +56,10 @@ class TranslateAndPad(grain.transforms.RandomMap):
             pad_c = rng.integers(0, self.max_grid_size - max(x.shape[0], y.shape[0]) + 1)
             pad_r = rng.integers(0, self.max_grid_size - max(x.shape[1], y.shape[1]) + 1)
         elif self.translate == "fixed":
-            pad_c = np.random.default_rng(seed=record["aug_puzzle_idx"]).integers(0, self.max_grid_size - max(x.shape[0], y.shape[0]) + 1)
-            pad_r = np.random.default_rng(seed=record["aug_puzzle_idx"]).integers(0, self.max_grid_size - max(x.shape[1], y.shape[1]) + 1)
+
+            seed = record['aug_puzzle_idx'].reshape(1,)
+            pad_c = np.random.default_rng(seed=seed).integers(0, self.max_grid_size - max(x.shape[0], y.shape[0]) + 1)
+            pad_r = np.random.default_rng(seed=seed).integers(0, self.max_grid_size - max(x.shape[1], y.shape[1]) + 1)
         else:
             pad_c = 0
             pad_r = 0

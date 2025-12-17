@@ -25,8 +25,8 @@ class MetricLogger:
         return "{}{}".format("{:f}".format(num).rstrip("0").rstrip("."), SIZES[magnitude])
 
 
-    def _pretty_print(self, metrics, epoch, step):
-        print_string = f"epoch: {epoch} | step: {step}"
+    def _pretty_print(self, metrics, step):
+        print_string = f"step: {step}"
         for k, v in metrics.items():
             print_string += f" | {k}: {self._human_format(v)}"
         print(print_string)
@@ -40,11 +40,10 @@ class MetricLogger:
         if not log_metrics:
             return
         step = log_metrics.pop("step")
-        epoch = log_metrics.pop("epoch")
         # move to cpu - to not block 
         log_metrics = jax.tree.map(lambda x: float(x), log_metrics)
         log_metrics["samples_per_second"] = self.batch_size / log_metrics["step_time"]
-        self._pretty_print(log_metrics, epoch, step)
+        self._pretty_print(log_metrics, step)
         if self.wandb:
             log_metrics = {f"{self.prefix}/{k}": v for k, v in log_metrics.items()}
             self.wandb.log(log_metrics, step=step)

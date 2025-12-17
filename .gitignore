@@ -8,5 +8,5 @@ data/
 profile/
 .DS_Store
 scratch/
-.checkpoints/
+checkpoints/
 trm-repo/

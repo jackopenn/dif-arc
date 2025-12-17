@@ -1,4 +1,5 @@
 import time
+import grain
 from math import ceil
 import os
 import jax
@@ -17,36 +18,36 @@ from modelling.model import Model
 from modelling.optimizers import adamw_atan2, sign_sgdw
 from utils import MetricLogger
 from evaluate import evaluate
+from functools import partial
 
  # TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
  
 def main(cfg):
-    jax.config.update('jax_enable_x64', True)
+    
 
     if cfg.parallel.n_devices > 1:
         jax.distributed.initialize()
-    if jax.process_index() == 0:
-        print(jax.devices())
+
     key = jax.random.key(cfg.seed)
     
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
 
-    opt_fn = adamw_atan2 if cfg.optim.use_atan2 else optax.adamw
+    opt_fn = partial(adamw_atan2, decouple_weight_decay=cfg.optim.decouple_weight_decay) if cfg.optim.use_atan2 else optax.adamw
     tx = optax.partition(
         {
-            "embed": sign_sgdw(
-                optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()), cfg.optim.weight_decay
+            "puzzle_emb": sign_sgdw(
+                optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()),
+                cfg.optim.puzzle_emb_weight_decay
             ),
             "other": opt_fn(
                 optax.warmup_constant_schedule(**cfg.other_schedule.to_dict()),
                 b1=cfg.optim.b1,
                 b2=cfg.optim.b2,
-                weight_decay=cfg.optim.weight_decay,
+                weight_decay=cfg.optim.other_weight_decay,
             )
         },
-        lambda state: jax.tree.map_with_path(lambda path, _: "embed" if path[0].key == "puzzle_emb" else "other", state)
+        lambda state: jax.tree.map_with_path(lambda path, _: "puzzle_emb" if path[0].key == "puzzle_emb" else "other", state)
     )
-
     optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
     
     shard_data = lambda data: data
@@ -62,6 +63,7 @@ def main(cfg):
 
         _, model_state = nnx.split(model)
         sharded_model_state = jax.lax.with_sharding_constraint(model_state, repl_sharding)
+        # fsdp on puzzle embs
         sharded_model_state.puzzle_emb = jax.lax.with_sharding_constraint(sharded_model_state.puzzle_emb, data_sharding)
         nnx.update(model, sharded_model_state)
         
@@ -88,16 +90,18 @@ def main(cfg):
         batch_size = batch['x'].shape[0]
         hidden_dim = z_init.shape[-1]
         if cfg.model.vision_mode:
-            seq_len = cfg.model.input_size // cfg.model.patch_size * cfg.model.input_size // cfg.model.patch_size
+            puzzle_len = cfg.model.input_size // cfg.model.patch_size * cfg.model.input_size // cfg.model.patch_size
         else:
-            seq_len = 900
-        seq_len = seq_len + cfg.model.puzzle_emb_len
+            puzzle_len = cfg.model.input_size * cfg.model.input_size
+        seq_len = puzzle_len + cfg.model.puzzle_emb_len
         z_init = jnp.broadcast_to(z_init, (batch_size, seq_len, hidden_dim))
         y_init = jnp.broadcast_to(y_init, (batch_size, seq_len, hidden_dim))
         if cfg.parallel.n_devices > 1:
             z_init = jax.device_put(z_init, data_sharding)
             y_init = jax.device_put(y_init, data_sharding)
-        return Carry(
+        
+
+        carry = Carry(
             z=z_init,                                         # (batch_size, seq_len, hidden_dim)
             y=y_init,                                         # (batch_size, seq_len, hidden_dim)
             x_input=batch['x'],                               # (batch_size, 900)
@@ -106,25 +110,44 @@ def main(cfg):
             step=jnp.zeros((batch_size, ), dtype=jnp.int32),  # (batch_size,)
             halted=jnp.zeros((batch_size, ), dtype=jnp.bool_) # (batch_size,)
         )
+        
+        assert carry.z.shape == (batch_size, seq_len, hidden_dim)
+        assert carry.y.shape == (batch_size, seq_len, hidden_dim)
+        assert carry.x_input.shape == (batch_size, puzzle_len)
+        assert carry.aug_puzzle_idx.shape == (batch_size,)
+        assert carry.y_true.shape == (batch_size, puzzle_len)
+        assert carry.step.shape == (batch_size,)
+        assert carry.halted.shape == (batch_size,)
+
+        return carry
     
 
     def pre_update_carry(carry, batch, z_init, y_init):
         """update the carry with new data from batch (if halted)"""
-        return Carry(
+        new_carry = Carry(
             z=jnp.where(carry.halted[..., jnp.newaxis, jnp.newaxis], z_init[jnp.newaxis, jnp.newaxis, ...], carry.z),
             y=jnp.where(carry.halted[..., jnp.newaxis, jnp.newaxis], y_init[jnp.newaxis, jnp.newaxis, ...], carry.y),
             x_input=jnp.where(carry.halted[..., jnp.newaxis], batch['x'], carry.x_input),
-            aug_puzzle_idx=jnp.where(carry.halted[..., jnp.newaxis], batch['aug_puzzle_idx'], carry.aug_puzzle_idx),
+            aug_puzzle_idx=jnp.where(carry.halted, batch['aug_puzzle_idx'], carry.aug_puzzle_idx),
             y_true=jnp.where(carry.halted[..., jnp.newaxis], batch['y'], carry.y_true),
             step=jnp.where(carry.halted, 0, carry.step),
             halted=jnp.where(carry.halted, False, carry.halted),
         )
-    
+        
+        assert new_carry.z.shape == carry.z.shape
+        assert new_carry.y.shape == carry.y.shape
+        assert new_carry.x_input.shape == carry.x_input.shape
+        assert new_carry.aug_puzzle_idx.shape == carry.aug_puzzle_idx.shape
+        assert new_carry.y_true.shape == carry.y_true.shape
+        assert new_carry.step.shape == carry.step.shape
+        assert new_carry.halted.shape == carry.halted.shape
+        
+        return new_carry
+        
 
     def post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, key):
         """update the halt flag if step >= N_supervision or q_logits > 0"""
         step = carry.step + 1
-        # halted = jnp.where(step >= N_supervision, True, carry.halted)
         halted = step >= N_supervision
         if cfg.recursion.act:
             halted = halted | (q_logits.reshape(-1) > 0)
@@ -135,7 +158,7 @@ def main(cfg):
                 * jax.random.randint(subkey2, step.shape, minval=2, maxval=N_supervision + 1)
             )
             halted = halted & (step >= min_halt_steps)
-        return Carry(
+        new_carry = Carry(
             z=z,
             y=y,
             x_input=carry.x_input,
@@ -143,7 +166,16 @@ def main(cfg):
             y_true=carry.y_true,
             step=step,
             halted=halted,
-        ), key
+        )
+        assert new_carry.z.shape == carry.z.shape
+        assert new_carry.y.shape == carry.y.shape
+        assert new_carry.x_input.shape == carry.x_input.shape
+        assert new_carry.aug_puzzle_idx.shape == carry.aug_puzzle_idx.shape
+        assert new_carry.y_true.shape == carry.y_true.shape
+        assert new_carry.step.shape == carry.step.shape
+        assert new_carry.halted.shape == carry.halted.shape
+
+        return new_carry, key
 
     
     def stablemax_cross_entropy_with_integer_labels(logits, labels, eps=1e-30):
@@ -155,22 +187,15 @@ def main(cfg):
 
 
     def latent_recursion(model, x, y, z, n):
-        def latent_recursion_body(z, _):
-            return model(x, y, z), None
-        with jax.named_scope("latent_recursion_scan"):
-            z, _ = jax.lax.scan(latent_recursion_body, z, None, length=n, unroll=True)
-        with jax.named_scope("latent_recursion_last"):
-            y = model(y, z)
+        for _ in range(n):
+            z = model(x, y, z)
+        y = model(y, z)
         return y, z
 
-
+    
     def deep_recursion(model, x, y, z, n, T):
-        def deep_recursion_body(carry, _):
-            y, z = carry
+        for _ in range(T):
             y, z = latent_recursion(model, x, y, z, n)
-            return (y, z), None
-        with jax.named_scope("deep_recursion_scan"):
-            (y, z), _ = jax.lax.scan(deep_recursion_body, (y, z), None, length=T, unroll=True)
         return y, z
 
 
@@ -178,10 +203,11 @@ def main(cfg):
         # forward pass
         x = model.input_embedding(x_input, aug_puzzle_idx)
         y, z = latent_recursion(model, x, y, z, n)
-        y_logits, q_logits = model.output_head(y), model.q_head(z)
+        y_logits, q_logits = model.output_head(y), model.q_head(y)
         y_preds = jnp.argmax(y_logits, axis=-1)
         # compute losses
         y_loss = stablemax_cross_entropy_with_integer_labels(
+        # y_loss = optax.softmax_cross_entropy_with_integer_labels(
             y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float64),
             y_true.reshape(-1)
         ).mean(where=y_true.reshape(-1) < 11)
@@ -204,7 +230,7 @@ def main(cfg):
         # 1 N_supervision step
         x = model.input_embedding(carry.x_input, carry.aug_puzzle_idx)
         # deep recursion loop (no grads)
-        z, y = carry.z, carry.y
+        y, z = carry.y, carry.z
         y, z = deep_recursion(model, x, y, z, n, T-1)
         # 1-step approx BPTT
         grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
@@ -232,6 +258,7 @@ def main(cfg):
             "y_norm": jnp.sqrt(jnp.mean(y**2)),
             "z_norm": jnp.sqrt(jnp.mean(z**2)),
             "n_supervision_steps": carry.step.mean(where=carry.halted),
+            "n_supervision_steps_all": carry.step.mean(),
         }
         if cfg.recursion.act:
             q_acc = ((q_logits.reshape(-1) > 0) == puzzle_correct).mean(where=carry.halted)
@@ -240,7 +267,7 @@ def main(cfg):
         if ema_model is not None:
             new_ema_state = jax.tree.map(
                 lambda new, old: (
-                    None if new is None else cfg.ema_weight * new + (1.0 - cfg.ema_weight) * old
+                    None if new is None else (1.0 - cfg.ema_weight) * new + cfg.ema_weight * old
                 ),
                 nnx.state(model),
                 nnx.state(ema_model),
@@ -274,8 +301,6 @@ def main(cfg):
     y_init = initializer(y_key, (cfg.model.hidden_dim,), jnp.bfloat16)
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
     
-    if cfg.use_ema:
-        ema_model = nnx.clone(model)
 
     # init data loader
     train_data_loader = get_data_loader(
@@ -304,35 +329,58 @@ def main(cfg):
         shard_by_jax_process=True
     ) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
-    # init checkpoint manager
-    ckpt_dir = ocp.test_utils.erase_and_create_empty(f'{os.getcwd()}/checkpoints/')
-    ckpt_options = ocp.CheckpointManagerOptions(
-        max_to_keep=1,
-        best_fn = lambda x: x,
-        best_mode="max",
-        cleanup_tmp_directories=True,
-        enable_async_checkpointing=False # otherwise wandb logging fails
-    )
+    ckpt_dir = os.path.join(cfg.ckpt_dir, "checkpoints")
+    if jax.process_index() == 0:
+        os.makedirs(ckpt_dir, exist_ok=True)
+    ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
     ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
 
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
     profiler_options.host_tracer_level = 3
-    trace_dir = f"profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
-    # steps_per_epoch = ceil(len(train_data_loader._data_source) / cfg.data.train_batch_size)
-    # print(f"{steps_per_epoch=}")
-    epoch = 0
+    os.makedirs("profiles", exist_ok=True)
+    profile_dir = f"profiles/profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+
+    train_iter = iter(train_data_loader)
+    if cfg.restore_from_checkpoint:
+        abstract_model_state = nnx.state(nnx.eval_shape(lambda: model))
+        abstract_optim_state = nnx.state(nnx.eval_shape(lambda: optimizer))
+        restore_args = dict(
+            z_init=ocp.args.ArrayRestore(z_init),
+            y_init=ocp.args.ArrayRestore(y_init),
+            model_state=ocp.args.StandardRestore(abstract_model_state),
+            optim_state=ocp.args.StandardRestore(abstract_optim_state),
+            # data_loader=grain.checkpoint.CheckpointRestore(train_iter),
+        )
+        if cfg.use_ema:
+            restore_args["ema_model"] = ocp.args.StandardRestore(abstract_model_state)
+        restored = ckpt_mngr.restore(ckpt_mngr.latest_step(), args=ocp.args.Composite(**restore_args))
+        step = ckpt_mngr.latest_step() + 1
+        nnx.update(model, restored.model_state)
+        nnx.update(optimizer, restored.optim_state)
+        if cfg.use_ema:
+            ema_model = nnx.clone(model)
+            nnx.update(ema_model, restored.ema_model)
+
+        z_init = restored.z_init
+        y_init = restored.y_init
+        # train_iter = restored.data_loader
+    else:
+        step = 0
+        if cfg.use_ema:
+            ema_model = nnx.clone(model)
+
+    carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
+
 
     import numpy as np
     t0 = time.perf_counter()
-    for step, batch in enumerate(train_data_loader):
-        # batch = jax.tree.map(np.asarray, batch)
-        batch = shard_data(batch)
-        if step == 0:
-            carry = init_carry(batch, z_init, y_init)
+    while step < cfg.max_steps + 1:
+        batch = shard_data(next(train_iter))
+
         if jax.process_index() == 0 and step == 10: 
-            jax.profiler.start_trace(trace_dir, profiler_options=profiler_options)
+            jax.profiler.start_trace(profile_dir, profiler_options=profiler_options)
         with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
             carry, metrics, key = train_step(
                 model, optimizer, carry, batch, y_init, z_init,
@@ -343,37 +391,43 @@ def main(cfg):
             )
         if jax.process_index() == 0 and step == 15:
             jax.profiler.stop_trace()
-            wandb.log_artifact(f"{os.getcwd()}/{trace_dir}/", name=f"run_{wandb.run.id}_trace", type="trace")
+            if cfg.wandb:
+                wandb.log_artifact(f"{os.getcwd()}/{profile_dir}/", name=f"run_{wandb.run.id}_profile", type="profile")
 
         step_time = time.perf_counter() - t0
         t0 = time.perf_counter()
         
         if jax.process_index() == 0:
-            train_logger.log({**metrics, "step_time": step_time, "step": step, "epoch": epoch})
-        
+            train_logger.log({**metrics, "step_time": step_time, "step": step})
+
+        if step > 0 and step % cfg.log_every == 0:
+            args = dict(
+                z_init=ocp.args.ArraySave(z_init),
+                y_init=ocp.args.ArraySave(y_init),
+                model_state=ocp.args.StandardSave(nnx.state(model)),
+                optim_state=ocp.args.StandardSave(nnx.state(optimizer)),
+                # data_loader=grain.checkpoint.CheckpointSave(train_iter),
+            )
+            if cfg.use_ema:
+                args["ema_model"] = ocp.args.StandardSave(nnx.state(ema_model))
+            ckpt_mngr.save(step, args=ocp.args.Composite(**args))
+            ckpt_mngr.wait_until_finished()
+            if jax.process_index() == 0 and cfg.wandb:
+                wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])    
+
         if step > 0 and step % cfg.eval.eval_every == 0:
+            seq_len = cfg.model.puzzle_emb_len + cfg.model.input_size * cfg.model.input_size
             val_metrics = evaluate(
                 ema_model if cfg.use_ema else model,
                 val_data_loader_factory, y_init, z_init,
                 cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
-                cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size
+                cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size, seq_len
             )
             if jax.process_index() == 0:
-                val_logger.log({**val_metrics, "step_time": step_time, "step": step, "epoch": epoch})
+                val_logger.log({**val_metrics, "step_time": step_time, "step": step})
         
-        # if step > 0 and step % cfg.log_every == 0:
-        #     jax.experimental.multihost_utils.sync_global_devices("barrier")
-        #     _, state = nnx.split(model)
-        #     try:
-        #         checkpoint_metric = val_metrics["puzzle_acc"]
-        #     except UnboundLocalError: # if checkpoint_every < eval_every, then val_metrics is not defined
-        #         checkpoint_metric = 0
-        #     ckpt_mngr.save(step, metrics=checkpoint_metric, args=ocp.args.StandardSave(state))
-        #     if jax.process_index() == 0 and cfg.wandb:
-        #         wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])
+        step += 1
 
-        # if step > 0 and step % steps_per_epoch == 0:
-        #     epoch += 1
 
 if __name__ == "__main__":
     run(main)

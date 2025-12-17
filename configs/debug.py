@@ -25,19 +25,24 @@ def get_config():
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
     cfg.model.puzzle_emb_len = 1
     
+    cfg.model.input_size = 30
+    
     #vision mode
     cfg.model.vision_mode = False
     cfg.model.patch_size = None
-    cfg.model.input_size = None
     
-    cfg.recursion.N_supervision = 16
-    cfg.recursion.n = 6
-    cfg.recursion.T = 3
+    cfg.recursion.N_supervision = 2
+    cfg.recursion.n = 2
+    cfg.recursion.T = 2
     cfg.recursion.act = True
     cfg.recursion.halt_explore_prob = 0.1
     
     cfg.optim.use_atan2 = True
-    cfg.optim.weight_decay = 0.1
+    cfg.optim.decouple_weight_decay = False # only for atan2
+
+    cfg.optim.puzzle_emb_weight_decay = 0.1
+    cfg.optim.other_weight_decay = 0.0
+    
     cfg.optim.b1 = 0.9
     cfg.optim.b2 = 0.95
 
@@ -57,19 +62,21 @@ def get_config():
 
     cfg.max_steps = 100_000
 
-    cfg.data.data_dir = "data/arc1concept-aug-100"
-    
-    cfg.data.train_batch_size = 8
-    cfg.data.eval_batch_size = 8
+    cfg.data.data_dir = "data/arc-agi-2-aug-concept-2"
+    cfg.data.train_batch_size = 4
+    cfg.data.eval_batch_size = 4
     cfg.data.translate = "fixed"
-    cfg.data.max_grid_size = 30
+    cfg.data.max_grid_size = lambda: cfg.model.input_size
     
     cfg.parallel.n_devices = 1
 
     cfg.wandb = False
     
     cfg.eval.pass_ks = [1, 2, 5, 10, 100, 1000]
-    cfg.eval.eval_every = 1000
-    cfg.log_every = 9
+    cfg.eval.eval_every = 100
+    cfg.log_every = 100
+    
+    cfg.restore_from_checkpoint = False
+    cfg.ckpt_dir = "checkpoints"  # Use GCS path for multi-host TPU pods
 
     return cfg

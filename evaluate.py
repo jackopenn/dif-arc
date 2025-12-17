@@ -19,12 +19,12 @@ class Carry:
     halted: jax.Array
 
 
-def init_carry(batch, z_init, y_init):
+def init_carry(batch, z_init, y_init, seq_len):
     """initialize the carry with the initial data"""
     batch_size = batch['x'].shape[0]
     hidden_dim = z_init.shape[-1]
-    z_init = jnp.broadcast_to(z_init, (batch_size, 901, hidden_dim))
-    y_init = jnp.broadcast_to(y_init, (batch_size, 901, hidden_dim))
+    z_init = jnp.broadcast_to(z_init, (batch_size, seq_len, hidden_dim))
+    y_init = jnp.broadcast_to(y_init, (batch_size, seq_len, hidden_dim))
     # z_init = shard_data(z_init)
     # y_init = shard_data(y_init)
     return Carry(
@@ -74,7 +74,7 @@ def get_top_k_preds(example_preds, k):
 
 
 
-def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pass_ks, shard_data, batch_size):
+def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pass_ks, shard_data, batch_size, seq_len):
     
     # preds = {
     #     "abcde1g7": {
@@ -96,7 +96,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
     for batch in tqdm(data_loader, desc="evaluating", total=n_samples):
         batch = shard_data(batch)
         
-        carry = init_carry(batch, z_init, y_init)
+        carry = init_carry(batch, z_init, y_init, seq_len)
 
         y_preds, cell_acc, puzzle_acc = eval_step(model, carry, N_supervision, n, T)
         
