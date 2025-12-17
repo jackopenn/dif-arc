@@ -9,4 +9,4 @@ profile/
 .DS_Store
 scratch/
 checkpoints/
-trm-repo/
+# trm-repo/
