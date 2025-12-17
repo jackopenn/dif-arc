@@ -329,7 +329,8 @@ def main(cfg):
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
     profiler_options.host_tracer_level = 3
-    profile_dir = f"profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    os.makedirs("profiles", exist_ok=True)
+    profile_dir = f"profiles/profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
     train_iter = iter(train_data_loader)
