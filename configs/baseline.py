@@ -41,7 +41,7 @@ def get_config():
     cfg.optim.decouple_weight_decay = False # only for atan2
 
     cfg.optim.puzzle_emb_weight_decay = 0.1
-    cfg.optim.other_weight_decay = 0.0
+    cfg.optim.other_weight_decay = 0.1
 
     cfg.optim.b1 = 0.9
     cfg.optim.b2 = 0.95
