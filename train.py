@@ -331,11 +331,11 @@ def main(cfg):
     #     shard_by_jax_process=True
     # ) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
-    ckpt_dir = os.path.join(cfg.ckpt_dir, "checkpoints")
-    if jax.process_index() == 0:
-        os.makedirs(ckpt_dir, exist_ok=True)
-    ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
-    ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
+    # ckpt_dir = os.path.join(cfg.ckpt_dir, "checkpoints")
+    # if jax.process_index() == 0:
+    #     os.makedirs(ckpt_dir, exist_ok=True)
+    # ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
+    # ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
 
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
@@ -346,28 +346,29 @@ def main(cfg):
 
     train_iter = iter(train_data_loader)
     if cfg.restore_from_checkpoint:
-        abstract_model_state = nnx.state(nnx.eval_shape(lambda: model))
-        abstract_optim_state = nnx.state(nnx.eval_shape(lambda: optimizer))
-        restore_args = dict(
-            z_init=ocp.args.ArrayRestore(z_init),
-            y_init=ocp.args.ArrayRestore(y_init),
-            model_state=ocp.args.StandardRestore(abstract_model_state),
-            optim_state=ocp.args.StandardRestore(abstract_optim_state),
-            # data_loader=grain.checkpoint.CheckpointRestore(train_iter),
-        )
-        if cfg.use_ema:
-            restore_args["ema_model"] = ocp.args.StandardRestore(abstract_model_state)
-        restored = ckpt_mngr.restore(ckpt_mngr.latest_step(), args=ocp.args.Composite(**restore_args))
-        step = ckpt_mngr.latest_step() + 1
-        nnx.update(model, restored.model_state)
-        nnx.update(optimizer, restored.optim_state)
-        if cfg.use_ema:
-            ema_model = nnx.clone(model)
-            nnx.update(ema_model, restored.ema_model)
+        # abstract_model_state = nnx.state(nnx.eval_shape(lambda: model))
+        # abstract_optim_state = nnx.state(nnx.eval_shape(lambda: optimizer))
+        # restore_args = dict(
+        #     z_init=ocp.args.ArrayRestore(z_init),
+        #     y_init=ocp.args.ArrayRestore(y_init),
+        #     model_state=ocp.args.StandardRestore(abstract_model_state),
+        #     optim_state=ocp.args.StandardRestore(abstract_optim_state),
+        #     # data_loader=grain.checkpoint.CheckpointRestore(train_iter),
+        # )
+        # if cfg.use_ema:
+        #     restore_args["ema_model"] = ocp.args.StandardRestore(abstract_model_state)
+        # restored = ckpt_mngr.restore(ckpt_mngr.latest_step(), args=ocp.args.Composite(**restore_args))
+        # step = ckpt_mngr.latest_step() + 1
+        # nnx.update(model, restored.model_state)
+        # nnx.update(optimizer, restored.optim_state)
+        # if cfg.use_ema:
+        #     ema_model = nnx.clone(model)
+        #     nnx.update(ema_model, restored.ema_model)
 
-        z_init = restored.z_init
-        y_init = restored.y_init
+        # z_init = restored.z_init
+        # y_init = restored.y_init
         # train_iter = restored.data_loader
+        pass
     else:
         step = 0
         if cfg.use_ema:
@@ -402,20 +403,20 @@ def main(cfg):
         if jax.process_index() == 0:
             train_logger.log({**metrics, "step_time": step_time, "step": step})
 
-        if step > 0 and step % cfg.log_every == 0:
-            args = dict(
-                z_init=ocp.args.ArraySave(z_init),
-                y_init=ocp.args.ArraySave(y_init),
-                model_state=ocp.args.StandardSave(nnx.state(model)),
-                optim_state=ocp.args.StandardSave(nnx.state(optimizer)),
-                # data_loader=grain.checkpoint.CheckpointSave(train_iter),
-            )
-            if cfg.use_ema:
-                args["ema_model"] = ocp.args.StandardSave(nnx.state(ema_model))
-            ckpt_mngr.save(step, args=ocp.args.Composite(**args))
-            ckpt_mngr.wait_until_finished()
-            if jax.process_index() == 0 and cfg.wandb:
-                wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])    
+        # if step > 0 and step % cfg.log_every == 0:
+        #     args = dict(
+        #         z_init=ocp.args.ArraySave(z_init),
+        #         y_init=ocp.args.ArraySave(y_init),
+        #         model_state=ocp.args.StandardSave(nnx.state(model)),
+        #         optim_state=ocp.args.StandardSave(nnx.state(optimizer)),
+        #         # data_loader=grain.checkpoint.CheckpointSave(train_iter),
+        #     )
+        #     if cfg.use_ema:
+        #         args["ema_model"] = ocp.args.StandardSave(nnx.state(ema_model))
+        #     ckpt_mngr.save(step, args=ocp.args.Composite(**args))
+        #     ckpt_mngr.wait_until_finished()
+        #     if jax.process_index() == 0 and cfg.wandb:
+        #         wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])    
 
         # if step > 0 and step % cfg.eval.eval_every == 0:
         #     seq_len = cfg.model.puzzle_emb_len + cfg.model.input_size * cfg.model.input_size
