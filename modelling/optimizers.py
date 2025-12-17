@@ -14,6 +14,7 @@ def scale_by_adam_atan2(
     mu_dtype: Optional[jax.typing.DTypeLike] = None,
     *,
     nesterov: bool = False,
+    l2_decay: float = None,
 ) -> base.GradientTransformation:
 
     mu_dtype = utils.canonicalize_dtype(mu_dtype)
@@ -25,7 +26,16 @@ def scale_by_adam_atan2(
 
 
     def update_fn(updates, state, params=None):
-        del params
+        # --- L2 regularization à la paper: g <- grad + λ * θ
+        if l2_decay:
+          if params is None:
+            raise ValueError("l2_decay requires `params` to be passed to update_fn.")
+          updates = jax.tree.map(
+              lambda g, p: None if g is None else g + l2_decay * p,
+              updates,
+              params,
+              is_leaf=lambda x: x is None,
+          )
         mu = optax.tree.update_moment(updates, state.mu, b1, 1)
         nu = optax.tree.update_moment_per_elem_norm(updates, state.nu, b2, 2)
         count_inc = numerics.safe_increment(state.count)
@@ -67,27 +77,15 @@ def adamw_atan2(
     decouple_weight_decay: bool = False,
 ) -> base.GradientTransformationExtraArgs:
 
-    adam_part = scale_by_adam_atan2(
-        b1=b1,
-        b2=b2,
-        mu_dtype=mu_dtype,
-        nesterov=nesterov,
-    )
-
-    wd_part = transform.add_decayed_weights(weight_decay, mask)
-
     if decouple_weight_decay:
-        # AdamW-style: wd applied AFTER the adaptive transform
         return combine.chain(
-            adam_part,
-            wd_part,
+            scale_by_adam_atan2(b1=b1, b2=b2, mu_dtype=mu_dtype, nesterov=nesterov, l2_decay=None),
+            transform.add_decayed_weights(weight_decay, mask),
             transform.scale_by_learning_rate(learning_rate),
         )
     else:
-        # Coupled L2: wd injected into the "gradient" BEFORE Adam's adaptivity
         return combine.chain(
-            wd_part,
-            adam_part,
+            scale_by_adam_atan2(b1=b1, b2=b2, mu_dtype=mu_dtype, nesterov=nesterov, l2_decay=weight_decay),
             transform.scale_by_learning_rate(learning_rate),
         )
 
