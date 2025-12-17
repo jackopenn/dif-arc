@@ -49,7 +49,7 @@ def get_config():
     warmup_steps = 2000
 
     cfg.embed_schedule.init_value = init_value
-    cfg.embed_schedule.peak_value = 1e-2
+    cfg.embed_schedule.peak_value = 1e-4
     cfg.embed_schedule.warmup_steps = warmup_steps
     
     cfg.other_schedule.init_value = init_value

@@ -32,9 +32,11 @@ def main(cfg):
     opt_fn = adamw_atan2 if cfg.optim.use_atan2 else optax.adamw
     tx = optax.partition(
         {
-            "puzzle_emb": sign_sgdw(
+            "puzzle_emb": opt_fn(
                 optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()),
-                cfg.optim.weight_decay
+                b1=cfg.optim.b1,
+                b2=cfg.optim.b2,
+                weight_decay=cfg.optim.weight_decay,
             ),
             "other": opt_fn(
                 optax.warmup_constant_schedule(**cfg.other_schedule.to_dict()),
