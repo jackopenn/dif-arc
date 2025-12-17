@@ -64,18 +64,32 @@ def adamw_atan2(
     mask: Optional[Union[Any, Callable[[base.Params], Any]]] = None,
     *,
     nesterov: bool = False,
+    decouple_weight_decay: bool = False,
 ) -> base.GradientTransformationExtraArgs:
-  
-    return combine.chain(
-        scale_by_adam_atan2(
-            b1=b1,
-            b2=b2,
-            mu_dtype=mu_dtype,
-            nesterov=nesterov,
-        ),
-        transform.add_decayed_weights(weight_decay, mask), # TODO: remove decay
-        transform.scale_by_learning_rate(learning_rate),
+
+    adam_part = scale_by_adam_atan2(
+        b1=b1,
+        b2=b2,
+        mu_dtype=mu_dtype,
+        nesterov=nesterov,
     )
+
+    wd_part = transform.add_decayed_weights(weight_decay, mask)
+
+    if decouple_weight_decay:
+        # AdamW-style: wd applied AFTER the adaptive transform
+        return combine.chain(
+            adam_part,
+            wd_part,
+            transform.scale_by_learning_rate(learning_rate),
+        )
+    else:
+        # Coupled L2: wd injected into the "gradient" BEFORE Adam's adaptivity
+        return combine.chain(
+            wd_part,
+            adam_part,
+            transform.scale_by_learning_rate(learning_rate),
+        )
 
 
 def sign_sgdw(

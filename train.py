@@ -16,6 +16,7 @@ from modelling.model import Model
 from modelling.optimizers import adamw_atan2, sign_sgdw
 from utils import MetricLogger
 from evaluate import evaluate
+from functools import partial
 
  # TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
  
@@ -29,7 +30,7 @@ def main(cfg):
     
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
 
-    opt_fn = adamw_atan2 if cfg.optim.use_atan2 else optax.adamw
+    opt_fn = partial(adamw_atan2, decouple_weight_decay=cfg.optim.decouple_weight_decay) if cfg.optim.use_atan2 else optax.adamw
     tx = optax.partition(
         {
             "puzzle_emb": sign_sgdw(
@@ -183,30 +184,12 @@ def main(cfg):
         return optax.softmax_cross_entropy_with_integer_labels(s_logits, labels)
 
 
-    # def latent_recursion(model, x, y, z, n):
-    #     def latent_recursion_body(z, _):
-    #         return model(x, y, z), None
-    #     with jax.named_scope("latent_recursion_scan"):
-    #         z, _ = jax.lax.scan(latent_recursion_body, z, None, length=n, unroll=True)
-    #     with jax.named_scope("latent_recursion_last"):
-    #         y = model(y, z)
-    #     return y, z
-
     def latent_recursion(model, x, y, z, n):
         for _ in range(n):
             z = model(x, y, z)
         y = model(y, z)
         return y, z
 
-
-    # def deep_recursion(model, x, y, z, n, T):
-    #     def deep_recursion_body(carry, _):
-    #         y, z = carry
-    #         y, z = latent_recursion(model, x, y, z, n)
-    #         return (y, z), None
-    #     with jax.named_scope("deep_recursion_scan"):
-    #         (y, z), _ = jax.lax.scan(deep_recursion_body, (y, z), None, length=T, unroll=True)
-    #     return y, z
     
     def deep_recursion(model, x, y, z, n, T):
         for _ in range(T):
@@ -380,12 +363,10 @@ def main(cfg):
 
     carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
 
-    # print(carry.aug_puzzle_idx.shape, carry.step.shape, carry.halted.shape)
 
     t0 = time.perf_counter()
     while step < cfg.max_steps + 1:
         batch = shard_data(next(train_iter))
-        # print(batch['aug_puzzle_idx'].shape)
 
         if jax.process_index() == 0 and step == 10: 
             jax.profiler.start_trace(profile_dir, profiler_options=profiler_options)

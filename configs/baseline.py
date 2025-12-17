@@ -38,6 +38,8 @@ def get_config():
     cfg.recursion.halt_explore_prob = 0.1
     
     cfg.optim.use_atan2 = True
+    cfg.optim.decouple_weight_decay = False # only for atan2
+
     cfg.optim.weight_decay = 0.1
     cfg.optim.b1 = 0.9
     cfg.optim.b2 = 0.95
