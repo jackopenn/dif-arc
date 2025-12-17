@@ -18,7 +18,7 @@ class JsonDataSource(grain.sources.RandomAccessDataSource):
         return self.data[index]
     
     def __repr__(self) -> str:
-        return f"RangeDataSource(file_path={self.file_path})"
+        return f"JsonDataSource(file_path={self.file_path})"
 
 
 class Parse(grain.transforms.Map):
