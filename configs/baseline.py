@@ -6,8 +6,8 @@ from sws import Config
 def get_config():
     
     def get_puzzle_vocab_size(data_dir):
-        # return json.load(open(os.path.join(data_dir+"/train", "dataset.json"), 'r'))['num_puzzle_identifiers']
-        return json.load(open(os.path.join(data_dir, "metadata.json"), 'r'))['train']['num_aug_puzzles']
+        return json.load(open(os.path.join(data_dir+"/train", "dataset.json"), 'r'))['num_puzzle_identifiers']
+        # return json.load(open(os.path.join(data_dir, "metadata.json"), 'r'))['train']['num_aug_puzzles']
     
     cfg = Config()
     cfg.seed = 69420
@@ -42,7 +42,7 @@ def get_config():
     cfg.optim.decouple_weight_decay = False # only for atan2
 
     cfg.optim.puzzle_emb_weight_decay = 0.1
-    cfg.optim.other_weight_decay = 0.0
+    cfg.optim.other_weight_decay = 0.1
 
     cfg.optim.b1 = 0.9
     cfg.optim.b2 = 0.95
