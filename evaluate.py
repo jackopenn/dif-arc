@@ -118,7 +118,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         print("d8_aug shape", batch['d8_aug'].shape)
         print("colour_aug shape", batch['colour_aug'].shape)
         
-        print("x addressable", batch['x'].is_fully_addressable())
+        print("x addressable", batch['x'].is_fully_addressable)
         
         batch = shard_data(batch)
 
