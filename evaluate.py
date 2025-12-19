@@ -96,30 +96,25 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
     puzzle_totals = 0
     data_loader = data_loader_factory()
     num_batches = ceil(len(data_loader._data_source) / batch_size)
+    per_process_batch_size = batch_size // jax.process_count()
     last_batch = False
     for batch in tqdm(data_loader, desc="evaluating", total=num_batches):
-        print("x addressable here 1", batch['x'].is_fully_addressable)
-        
-        # if last batch, batch size will be less than batch_size so pad it to batch_size so can shard, then remove padding
-        if batch['x'].shape[0] < batch_size:
+
+        if batch['x'].shape[0] < per_process_batch_size:
             last_batch = True
             last_batch_size = batch['x'].shape[0]
-            padding_size = batch_size - batch['x'].shape[0]
-            batch['x'] = jnp.pad(batch['x'], ((0, padding_size), (0, 0)), mode='constant', constant_values=11)
-            batch['y'] = jnp.pad(batch['y'], ((0, padding_size), (0, 0)), mode='constant', constant_values=11)
-            batch['aug_puzzle_idx'] = jnp.pad(batch['aug_puzzle_idx'], (0, padding_size), mode='constant', constant_values=-1)
-            batch['example_idx'] = jnp.pad(batch['example_idx'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
-            batch['d8_aug'] = jnp.pad(batch['d8_aug'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
-            batch['colour_aug'] = jnp.pad(batch['colour_aug'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
+            padding_size = per_process_batch_size - batch['x'].shape[0]
+            # Keep padding on host (NumPy). If we use `jnp.pad` here, we can end up
+            # creating multi-host global arrays under the mesh context, which then
+            # cannot be re-sharded via `make_array_from_process_local_data`.
+            batch['x'] = np.pad(batch['x'], ((0, padding_size), (0, 0)), mode='constant', constant_values=11)
+            batch['y'] = np.pad(batch['y'], ((0, padding_size), (0, 0)), mode='constant', constant_values=11)
+            batch['aug_puzzle_idx'] = np.pad(batch['aug_puzzle_idx'], (0, padding_size), mode='constant', constant_values=-1)
+            batch['puzzle_idx'] = np.pad(batch['puzzle_idx'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
+            batch['example_idx'] = np.pad(batch['example_idx'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
+            batch['d8_aug'] = np.pad(batch['d8_aug'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
+            batch['colour_aug'] = np.pad(batch['colour_aug'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
 
-        print("x shape", batch['x'].shape)
-        print("y shape", batch['y'].shape)
-        print("aug_puzzle_idx shape", batch['aug_puzzle_idx'].shape)
-        print("example_idx shape", batch['example_idx'].shape)
-        print("d8_aug shape", batch['d8_aug'].shape)
-        print("colour_aug shape", batch['colour_aug'].shape)
-        
-        print("x addressable here 2", batch['x'].is_fully_addressable)
         
         batch = shard_data(batch)
 
