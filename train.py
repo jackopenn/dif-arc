@@ -369,62 +369,74 @@ def main(cfg):
 
     carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
 
+    seq_len = cfg.model.puzzle_emb_len + cfg.model.input_size * cfg.model.input_size
+    val_metrics = evaluate(
+            ema_model if cfg.use_ema else model,
+            val_data_loader_factory, y_init, z_init,
+            cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
+            cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size, seq_len
+        )
+    if jax.process_index() == 0:
+        val_logger.log({**val_metrics, "step_time": 0, "step": step})
+        if cfg.wandb:
+            wandb.log_artifact(f"{os.getcwd()}/preds.jsonl", name=f"run_{wandb.run.id}_preds", type="preds", aliases=[f"step_{step}"])   
+            os.remove(f"{os.getcwd()}/preds.jsonl")
 
-    t0 = time.perf_counter()
-    while step < cfg.max_steps + 1:
-        batch = shard_data(next(train_iter))
+    # t0 = time.perf_counter()
+    # while step < cfg.max_steps + 1:
+    #     batch = shard_data(next(train_iter))
 
-        # if jax.process_index() == 0 and step == 10: 
-        #     jax.profiler.start_trace(profile_dir, profiler_options=profiler_options)
-        # with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
-        #     carry, metrics, key = train_step(
-        #         model, optimizer, carry, batch, y_init, z_init,
-        #         cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
-        #         cfg.recursion.halt_explore_prob,
-        #         ema_model if cfg.use_ema else None,
-        #         key
-        #     )
-        # if jax.process_index() == 0 and step == 15:
-        #     jax.profiler.stop_trace()
-        #     if cfg.wandb:
-        #         wandb.log_artifact(f"{os.getcwd()}/{profile_dir}/", name=f"run_{wandb.run.id}_profile", type="profile")
+    #     if jax.process_index() == 0 and step == 10: 
+    #         jax.profiler.start_trace(profile_dir, profiler_options=profiler_options)
+    #     with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
+    #         carry, metrics, key = train_step(
+    #             model, optimizer, carry, batch, y_init, z_init,
+    #             cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
+    #             cfg.recursion.halt_explore_prob,
+    #             ema_model if cfg.use_ema else None,
+    #             key
+    #         )
+    #     if jax.process_index() == 0 and step == 15:
+    #         jax.profiler.stop_trace()
+    #         if cfg.wandb:
+    #             wandb.log_artifact(f"{os.getcwd()}/{profile_dir}/", name=f"run_{wandb.run.id}_profile", type="profile")
 
-        step_time = time.perf_counter() - t0
-        t0 = time.perf_counter()
+    #     step_time = time.perf_counter() - t0
+    #     t0 = time.perf_counter()
         
-        # if jax.process_index() == 0:
-        #     train_logger.log({**metrics, "step_time": step_time, "step": step})
+    #     if jax.process_index() == 0:
+    #         train_logger.log({**metrics, "step_time": step_time, "step": step})
 
-        if step > 0 and step % cfg.log_every == 0:
-            args = dict(
-                z_init=ocp.args.ArraySave(z_init),
-                y_init=ocp.args.ArraySave(y_init),
-                model_state=ocp.args.StandardSave(nnx.state(model)),
-                optim_state=ocp.args.StandardSave(nnx.state(optimizer)),
-                # data_loader=grain.checkpoint.CheckpointSave(train_iter),
-            )
-            if cfg.use_ema:
-                args["ema_model"] = ocp.args.StandardSave(nnx.state(ema_model))
-            ckpt_mngr.save(step, args=ocp.args.Composite(**args))
-            ckpt_mngr.wait_until_finished()
-            if jax.process_index() == 0 and cfg.wandb:
-                wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])    
+    #     if step > 0 and step % cfg.log_every == 0:
+    #         args = dict(
+    #             z_init=ocp.args.ArraySave(z_init),
+    #             y_init=ocp.args.ArraySave(y_init),
+    #             model_state=ocp.args.StandardSave(nnx.state(model)),
+    #             optim_state=ocp.args.StandardSave(nnx.state(optimizer)),
+    #             # data_loader=grain.checkpoint.CheckpointSave(train_iter),
+    #         )
+    #         if cfg.use_ema:
+    #             args["ema_model"] = ocp.args.StandardSave(nnx.state(ema_model))
+    #         ckpt_mngr.save(step, args=ocp.args.Composite(**args))
+    #         ckpt_mngr.wait_until_finished()
+    #         if jax.process_index() == 0 and cfg.wandb:
+    #             wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])    
 
-        if step > 0 and step % cfg.eval.eval_every == 0:
-            seq_len = cfg.model.puzzle_emb_len + cfg.model.input_size * cfg.model.input_size
-            val_metrics = evaluate(
-                ema_model if cfg.use_ema else model,
-                val_data_loader_factory, y_init, z_init,
-                cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
-                cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size, seq_len
-            )
-            if jax.process_index() == 0:
-                val_logger.log({**val_metrics, "step_time": step_time, "step": step})
-                if cfg.wandb:
-                    wandb.log_artifact(f"{os.getcwd()}/preds.jsonl", name=f"run_{wandb.run.id}_preds", type="preds", aliases=[f"step_{step}"])   
-                    os.remove(f"{os.getcwd()}/preds.jsonl")
+    #     if step > 0 and step % cfg.eval.eval_every == 0:
+    #         seq_len = cfg.model.puzzle_emb_len + cfg.model.input_size * cfg.model.input_size
+    #         val_metrics = evaluate(
+    #             ema_model if cfg.use_ema else model,
+    #             val_data_loader_factory, y_init, z_init,
+    #             cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
+    #             cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size, seq_len
+    #         )
+    #         if jax.process_index() == 0:
+    #             val_logger.log({**val_metrics, "step_time": step_time, "step": step})
+    #             if cfg.wandb:
+    #                 wandb.log_artifact(f"{os.getcwd()}/preds.jsonl", name=f"run_{wandb.run.id}_preds", type="preds", aliases=[f"step_{step}"])   
+    #                 os.remove(f"{os.getcwd()}/preds.jsonl")
         
-        step += 1
+    #     step += 1
 
 
 if __name__ == "__main__":
