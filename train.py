@@ -31,12 +31,10 @@ def main(cfg):
     model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
 
     opt_fn = partial(adamw_atan2, decouple_weight_decay=cfg.optim.decouple_weight_decay) if cfg.optim.use_atan2 else optax.adamw
+    puzzle_emb_schedule = optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict())
     tx = optax.partition(
         {
-            "puzzle_emb": sign_sgdw(
-                optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict()),
-                cfg.optim.puzzle_emb_weight_decay
-            ),
+            "puzzle_emb": sign_sgdw(puzzle_emb_schedule),
             "other": opt_fn(
                 optax.warmup_constant_schedule(**cfg.other_schedule.to_dict()),
                 b1=cfg.optim.b1,
@@ -236,6 +234,13 @@ def main(cfg):
             model, carry.x_input, carry.aug_puzzle_idx, y, z, carry.y_true, n
         )
         optimizer.update(model, grads)
+
+        # weight decay on puzzle embeddings
+        model_state = nnx.state(model)
+        model_state.puzzle_emb.embedding = model_state.puzzle_emb.embedding.at[carry.aug_puzzle_idx].add(
+            - puzzle_emb_schedule(optimizer.step) * cfg.optim.puzzle_emb_weight_decay * model_state.puzzle_emb.embedding[carry.aug_puzzle_idx]
+        )
+        nnx.update(model, model_state)
 
         # update halt flag
         carry, key = post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, key)
