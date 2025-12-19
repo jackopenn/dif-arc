@@ -98,6 +98,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
     num_batches = ceil(len(data_loader._data_source) / batch_size)
     last_batch = False
     for batch in tqdm(data_loader, desc="evaluating", total=num_batches):
+        print("x addressable here 1", batch['x'].is_fully_addressable)
         
         # if last batch, batch size will be less than batch_size so pad it to batch_size so can shard, then remove padding
         if batch['x'].shape[0] < batch_size:
@@ -118,7 +119,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         print("d8_aug shape", batch['d8_aug'].shape)
         print("colour_aug shape", batch['colour_aug'].shape)
         
-        print("x addressable", batch['x'].is_fully_addressable)
+        print("x addressable here 2", batch['x'].is_fully_addressable)
         
         batch = shard_data(batch)
 
