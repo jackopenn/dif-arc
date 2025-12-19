@@ -111,7 +111,15 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
             batch['d8_aug'] = jnp.pad(batch['d8_aug'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
             batch['colour_aug'] = jnp.pad(batch['colour_aug'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
 
-
+        print("x shape", batch['x'].shape)
+        print("y shape", batch['y'].shape)
+        print("aug_puzzle_idx shape", batch['aug_puzzle_idx'].shape)
+        print("example_idx shape", batch['example_idx'].shape)
+        print("d8_aug shape", batch['d8_aug'].shape)
+        print("colour_aug shape", batch['colour_aug'].shape)
+        
+        print("x addressable", batch['x'].is_fully_addressable())
+        
         batch = shard_data(batch)
 
         carry = init_carry(batch, z_init, y_init, seq_len)
