@@ -321,11 +321,11 @@ def main(cfg):
         translate=False,
         max_grid_size=cfg.data.max_grid_size,
         repeat=False,
-        drop_remainder=True,
+        drop_remainder=False,
         shard_by_jax_process=True
-    ) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
+    )
 
-    ckpt_dir = os.path.join(cfg.ckpt_dir, "checkpoints")
+    ckpt_dir = cfg.ckpt_dir if cfg.ckpt_dir.startswith("gs://") else os.path.join(os.getcwd(), cfg.ckpt_dir)
     if jax.process_index() == 0:
         os.makedirs(ckpt_dir, exist_ok=True)
     ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
@@ -374,26 +374,26 @@ def main(cfg):
     while step < cfg.max_steps + 1:
         batch = shard_data(next(train_iter))
 
-        if jax.process_index() == 0 and step == 10: 
-            jax.profiler.start_trace(profile_dir, profiler_options=profiler_options)
-        with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
-            carry, metrics, key = train_step(
-                model, optimizer, carry, batch, y_init, z_init,
-                cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
-                cfg.recursion.halt_explore_prob,
-                ema_model if cfg.use_ema else None,
-                key
-            )
-        if jax.process_index() == 0 and step == 15:
-            jax.profiler.stop_trace()
-            if cfg.wandb:
-                wandb.log_artifact(f"{os.getcwd()}/{profile_dir}/", name=f"run_{wandb.run.id}_profile", type="profile")
+        # if jax.process_index() == 0 and step == 10: 
+        #     jax.profiler.start_trace(profile_dir, profiler_options=profiler_options)
+        # with jax.profiler.StepTraceAnnotation("train_step", step_num=step):
+        #     carry, metrics, key = train_step(
+        #         model, optimizer, carry, batch, y_init, z_init,
+        #         cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
+        #         cfg.recursion.halt_explore_prob,
+        #         ema_model if cfg.use_ema else None,
+        #         key
+        #     )
+        # if jax.process_index() == 0 and step == 15:
+        #     jax.profiler.stop_trace()
+        #     if cfg.wandb:
+        #         wandb.log_artifact(f"{os.getcwd()}/{profile_dir}/", name=f"run_{wandb.run.id}_profile", type="profile")
 
         step_time = time.perf_counter() - t0
         t0 = time.perf_counter()
         
-        if jax.process_index() == 0:
-            train_logger.log({**metrics, "step_time": step_time, "step": step})
+        # if jax.process_index() == 0:
+        #     train_logger.log({**metrics, "step_time": step_time, "step": step})
 
         if step > 0 and step % cfg.log_every == 0:
             args = dict(
@@ -420,6 +420,9 @@ def main(cfg):
             )
             if jax.process_index() == 0:
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step})
+                if cfg.wandb:
+                    wandb.log_artifact(f"{os.getcwd()}/preds.jsonl", name=f"run_{wandb.run.id}_preds", type="preds", aliases=[f"step_{step}"])   
+                    os.remove(f"{os.getcwd()}/preds.jsonl")
         
         step += 1
 
