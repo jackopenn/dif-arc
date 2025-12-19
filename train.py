@@ -338,7 +338,7 @@ def main(cfg):
     profile_dir = f"profiles/profile_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
-    train_iter = iter(train_data_loader)
+    # train_iter = iter(train_data_loader)
     if cfg.restore_from_checkpoint:
         abstract_model_state = nnx.state(nnx.eval_shape(lambda: model))
         abstract_optim_state = nnx.state(nnx.eval_shape(lambda: optimizer))
@@ -367,7 +367,7 @@ def main(cfg):
         if cfg.use_ema:
             ema_model = nnx.clone(model)
 
-    carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
+    # carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
 
     seq_len = cfg.model.puzzle_emb_len + cfg.model.input_size * cfg.model.input_size
     val_metrics = evaluate(
