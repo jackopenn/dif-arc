@@ -130,6 +130,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
         y_preds = jax.experimental.multihost_utils.process_allgather(y_preds, tiled=True)
         y_trues = jax.experimental.multihost_utils.process_allgather(batch['y'], tiled=True)
         puzzle_idxs = jax.experimental.multihost_utils.process_allgather(batch['puzzle_idx'], tiled=True)
+        aug_puzzle_idxs = jax.experimental.multihost_utils.process_allgather(batch['aug_puzzle_idx'], tiled=True)
         example_idxs = jax.experimental.multihost_utils.process_allgather(batch['example_idx'], tiled=True)
         d8_augs = jax.experimental.multihost_utils.process_allgather(batch['d8_aug'], tiled=True)
         colour_augs = jax.experimental.multihost_utils.process_allgather(batch['colour_aug'], tiled=True)
@@ -138,6 +139,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
             y_preds = y_preds[:last_batch_size]
             y_trues = y_trues[:last_batch_size]
             puzzle_idxs = puzzle_idxs[:last_batch_size]
+            aug_puzzle_idxs = aug_puzzle_idxs[:last_batch_size]
             example_idxs = example_idxs[:last_batch_size]
             d8_augs = d8_augs[:last_batch_size]
             colour_augs = colour_augs[:last_batch_size]
@@ -153,10 +155,11 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
             d8_aug = int(d8_augs[i][0])
             colour_aug = colour_augs[i]
             y_pred = y_preds[i]
-            
+            aug_puzzle_idx = int(aug_puzzle_idxs[i])
+
             if jax.process_index() == 0:
                 with open("preds.jsonl", "a") as f:
-                    json.dump({"puzzle_idx": puzzle_idx, "y_pred": y_pred.tolist()}, f)
+                    json.dump({"aug_puzzle_idx": aug_puzzle_idx, "y_pred": y_pred.tolist()}, f)
                     f.write("\n")
             
             y_pred = crop(y_pred)
