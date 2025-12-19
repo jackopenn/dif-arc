@@ -377,7 +377,7 @@ def main(cfg):
             cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size, seq_len
         )
     if jax.process_index() == 0:
-        val_logger.log({**val_metrics, "step_time": 0, "step": step})
+        val_logger.log({**val_metrics, "step_time": 1, "step": step})
         if cfg.wandb:
             wandb.log_artifact(f"{os.getcwd()}/preds.jsonl", name=f"run_{wandb.run.id}_preds", type="preds", aliases=[f"step_{step}"])   
             os.remove(f"{os.getcwd()}/preds.jsonl")
