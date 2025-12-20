@@ -159,7 +159,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
 
             if jax.process_index() == 0:
                 with open("preds.jsonl", "a") as f:
-                    json.dump({"aug_puzzle_idx": aug_puzzle_idx, "y_pred": y_pred.tolist()}, f)
+                    json.dump({"aug_puzzle_idx": aug_puzzle_idx, "example_idx": example_idx, "y_pred": y_pred.tolist()}, f)
                     f.write("\n")
             
             y_pred = crop(y_pred)
