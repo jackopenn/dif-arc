@@ -35,6 +35,33 @@ class Parse(grain.transforms.Map):
         }
 
 
+
+# def np_grid_to_seq_translational_augment(inp: np.ndarray, out: np.ndarray, do_translation: bool):
+#     # PAD: 0, <eos>: 1, digits: 2 ... 11
+#     # Compute random top-left pad
+#     if do_translation:
+#         pad_r = np.random.randint(0, ARCMaxGridSize - max(inp.shape[0], out.shape[0]) + 1)
+#         pad_c = np.random.randint(0, ARCMaxGridSize - max(inp.shape[1], out.shape[1]) + 1)
+#     else:
+#         pad_r = pad_c = 0
+
+#     # Pad grid
+#     result = []
+#     for grid in [inp, out]:
+#         nrow, ncol = grid.shape
+#         grid = np.pad(grid + 2, ((pad_r, ARCMaxGridSize - pad_r - nrow), (pad_c, ARCMaxGridSize - pad_c - ncol)), constant_values=0)
+
+#         # Add <eos>
+#         eos_row, eos_col = pad_r + nrow, pad_c + ncol
+#         if eos_row < ARCMaxGridSize:
+#             grid[eos_row, pad_c:eos_col] = 1
+#         if eos_col < ARCMaxGridSize:
+#             grid[pad_r:eos_row, eos_col] = 1
+
+#         result.append(grid.flatten())
+
+#     return result
+
 class TranslateAndPad(grain.transforms.RandomMap):
     def __init__(self, translate, max_grid_size=30):
         self.translate = translate
@@ -47,35 +74,64 @@ class TranslateAndPad(grain.transforms.RandomMap):
             mode="constant",
             constant_values=pad_value
         )
+
+    def _translate_pad_and_add_border(
+        self,
+        grid: np.ndarray,
+        *,
+        pad_r: int,
+        pad_c: int,
+        pad_value: int,
+        border_value: int,
+    ) -> np.ndarray:
+        """Pad grid into max_grid_size canvas and add an EOS-like border.
+
+        This mirrors the logic in the commented reference implementation above:
+        - Use shared (pad_r, pad_c) offsets for translation
+        - Compute border coordinates using the *current grid's* shape
+        """
+        nrow, ncol = grid.shape
+        padded = self._pad(
+            grid,
+            (
+                (pad_r, self.max_grid_size - pad_r - nrow),
+                (pad_c, self.max_grid_size - pad_c - ncol),
+            ),
+            pad_value,
+        )
+
+        eos_row, eos_col = pad_r + nrow, pad_c + ncol
+        if eos_row < self.max_grid_size:
+            padded[eos_row, pad_c:eos_col] = border_value
+        if eos_col < self.max_grid_size:
+            padded[pad_r:eos_row, eos_col] = border_value
+        return padded
     
     def random_map(self, record, rng):
         x, y = record["x"], record["y"]
 
         # top left corner
+        max_rows = max(x.shape[0], y.shape[0])
+        max_cols = max(x.shape[1], y.shape[1])
         if self.translate == "random":
-            pad_c = rng.integers(0, self.max_grid_size - max(x.shape[0], y.shape[0]) + 1)
-            pad_r = rng.integers(0, self.max_grid_size - max(x.shape[1], y.shape[1]) + 1)
+            pad_r = rng.integers(0, self.max_grid_size - max_rows + 1)
+            pad_c = rng.integers(0, self.max_grid_size - max_cols + 1)
         elif self.translate == "fixed":
-
-            seed = record['aug_puzzle_idx'].reshape(1,)
-            pad_c = np.random.default_rng(seed=seed).integers(0, self.max_grid_size - max(x.shape[0], y.shape[0]) + 1)
-            pad_r = np.random.default_rng(seed=seed).integers(0, self.max_grid_size - max(x.shape[1], y.shape[1]) + 1)
+            seed = int(np.asarray(record["aug_puzzle_idx"]).reshape(-1)[0])
+            local_rng = np.random.default_rng(seed=seed)
+            pad_r = local_rng.integers(0, self.max_grid_size - max_rows + 1)
+            pad_c = local_rng.integers(0, self.max_grid_size - max_cols + 1)
         else:
             pad_c = 0
             pad_r = 0
         
-        padded_x = self._pad(x, ((pad_c, self.max_grid_size - x.shape[0] - pad_c), (pad_r, self.max_grid_size - x.shape[1] - pad_r)), 11)
-        padded_y = self._pad(y, ((pad_c, self.max_grid_size - y.shape[0] - pad_c), (pad_r, self.max_grid_size - y.shape[1] - pad_r)), 11)
-
-        border_c = pad_c + x.shape[0]
-        border_r = pad_r + x.shape[1]
-
-        if border_c < self.max_grid_size:
-            padded_x[border_c, pad_r:border_r] = 10
-            padded_y[border_c, pad_r:border_r] = 10
-        if border_r < self.max_grid_size:
-            padded_x[pad_c:border_c, border_r] = 10
-            padded_y[pad_c:border_c, border_r] = 10
+        # pad: 11, border: 10 (viewer expects these sentinel values)
+        padded_x = self._translate_pad_and_add_border(
+            x, pad_r=pad_r, pad_c=pad_c, pad_value=11, border_value=10
+        )
+        padded_y = self._translate_pad_and_add_border(
+            y, pad_r=pad_r, pad_c=pad_c, pad_value=11, border_value=10
+        )
     
         return {
             **record,
