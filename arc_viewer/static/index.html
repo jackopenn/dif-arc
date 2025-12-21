@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ARC Viewer</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="title">ARC Viewer</div>
+        <div class="controls">
+          <input id="search" class="search" placeholder="Search puzzle_id…" />
+          <label class="chk"><input id="onlyCorrect" type="checkbox" /> only correct</label>
+          <label class="chk"><input id="onlyWithPred" type="checkbox" /> only w/ pred</label>
+          <button id="reload" class="btn">Reload list</button>
+        </div>
+      </header>
+
+      <div class="main">
+        <aside class="sidebar">
+          <div class="sidebar-header">
+            <div class="sidebar-title">puzzle_id</div>
+            <div class="sidebar-subtitle" id="puzzleInfo">…</div>
+          </div>
+          <div id="puzzleList" class="id-list"></div>
+        </aside>
+
+        <aside class="sidebar">
+          <div class="sidebar-header">
+            <div class="sidebar-title">aug_puzzle_idx</div>
+            <div class="sidebar-subtitle" id="augInfo">…</div>
+          </div>
+          <div id="augList" class="id-list"></div>
+        </aside>
+
+        <section class="content">
+          <div class="row">
+            <div class="nav">
+              <button id="prevBtn" class="btn">Prev</button>
+              <input id="augInput" class="aug-input" placeholder="aug_puzzle_idx" />
+              <button id="goBtn" class="btn">Go</button>
+              <button id="nextBtn" class="btn">Next</button>
+              <div class="spacer"></div>
+              <div class="metrics" id="metrics"></div>
+              <div id="status" class="status"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="meta">
+              <div class="meta-title">Metadata</div>
+              <pre id="metaPre" class="pre"></pre>
+            </div>
+          </div>
+
+          <div id="examples" class="examples"></div>
+        </section>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
+
