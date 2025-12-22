@@ -74,10 +74,10 @@ def get_config():
     cfg.wandb = True
     
     cfg.eval.pass_ks = [1, 2, 5, 10, 100, 1000]
-    cfg.eval.eval_every = 50_000
+    cfg.eval.eval_every = 20_000
     cfg.log_every = lambda: cfg.eval.eval_every
     
     cfg.restore_from_checkpoint = False
-    cfg.ckpt_dir = "gs://trm-jax-123" 
+    cfg.ckpt_dir = "gs://trm-jax-123/checkpoints" 
 
     return cfg

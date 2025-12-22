@@ -5,6 +5,7 @@ from jax import numpy as jnp
 import numpy as np
 from flax import nnx, struct
 from tqdm import tqdm
+import json
 
 from scripts.build_arc_dataset import inverse_d8_aug, inverse_colour_aug, crop, grid_hash
 
@@ -25,8 +26,6 @@ def init_carry(batch, z_init, y_init, seq_len):
     hidden_dim = z_init.shape[-1]
     z_init = jnp.broadcast_to(z_init, (batch_size, seq_len, hidden_dim))
     y_init = jnp.broadcast_to(y_init, (batch_size, seq_len, hidden_dim))
-    # z_init = shard_data(z_init)
-    # y_init = shard_data(y_init)
     return Carry(
         z=z_init,                                         # (batch_size, 901, hidden_dim)
         y=y_init,                                         # (batch_size, 901, hidden_dim)
@@ -54,9 +53,11 @@ def eval_step(model, carry, N_supervision, n, T):
     y_preds = jnp.argmax(y_logits, axis=-1)
     cell_correct = y_preds == carry.y_true
     puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 11)
-    cell_acc = cell_correct.mean(where=carry.y_true < 11)
-    puzzle_acc = puzzle_correct.mean()
-    return y_preds, cell_acc, puzzle_acc
+    cell_total = (carry.y_true < 11).sum()
+    cell_correct_sum = cell_correct.sum(where=carry.y_true < 11)
+    puzzle_total = (carry.aug_puzzle_idx >= 0).sum()
+    puzzle_correct_sum = puzzle_correct.sum()
+    return y_preds, cell_correct_sum, cell_total, puzzle_correct_sum, puzzle_total
 
 
 def get_top_k_preds(example_preds, k):
@@ -89,37 +90,77 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
     #     }
     # }
     preds = {}
-    cell_accs = jnp.array(0.0)
-    puzzle_accs = jnp.array(0.0)
+    cell_corrects = 0
+    cell_totals = 0
+    puzzle_corrects = 0
+    puzzle_totals = 0
     data_loader = data_loader_factory()
-    n_samples = ceil(len(data_loader._data_source) / batch_size)
-    for batch in tqdm(data_loader, desc="evaluating", total=n_samples):
-        batch = shard_data(batch)
+    num_batches = ceil(len(data_loader._data_source) / batch_size)
+    per_process_batch_size = batch_size // jax.process_count()
+    last_batch = False
+    for batch in tqdm(data_loader, desc="evaluating", total=num_batches):
+
+        if batch['x'].shape[0] < per_process_batch_size:
+            last_batch = True
+            last_batch_size = batch['x'].shape[0]
+            padding_size = per_process_batch_size - batch['x'].shape[0]
+            # Keep padding on host (NumPy). If we use `jnp.pad` here, we can end up
+            # creating multi-host global arrays under the mesh context, which then
+            # cannot be re-sharded via `make_array_from_process_local_data`.
+            batch['x'] = np.pad(batch['x'], ((0, padding_size), (0, 0)), mode='constant', constant_values=11)
+            batch['y'] = np.pad(batch['y'], ((0, padding_size), (0, 0)), mode='constant', constant_values=11)
+            batch['aug_puzzle_idx'] = np.pad(batch['aug_puzzle_idx'], (0, padding_size), mode='constant', constant_values=-1)
+            batch['puzzle_idx'] = np.pad(batch['puzzle_idx'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
+            batch['example_idx'] = np.pad(batch['example_idx'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
+            batch['d8_aug'] = np.pad(batch['d8_aug'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
+            batch['colour_aug'] = np.pad(batch['colour_aug'], ((0, padding_size), (0, 0)), mode='constant', constant_values=-1)
+
         
+        batch = shard_data(batch)
+
         carry = init_carry(batch, z_init, y_init, seq_len)
 
-        y_preds, cell_acc, puzzle_acc = eval_step(model, carry, N_supervision, n, T)
+        y_preds, cell_correct_sum, cell_total, puzzle_correct_sum, puzzle_total = eval_step(model, carry, N_supervision, n, T)
         
-        cell_accs += cell_acc
-        puzzle_accs += puzzle_acc
+        cell_corrects += cell_correct_sum
+        cell_totals += cell_total
+        puzzle_corrects += puzzle_correct_sum
+        puzzle_totals += puzzle_total
 
         y_preds = jax.experimental.multihost_utils.process_allgather(y_preds, tiled=True)
         y_trues = jax.experimental.multihost_utils.process_allgather(batch['y'], tiled=True)
         puzzle_idxs = jax.experimental.multihost_utils.process_allgather(batch['puzzle_idx'], tiled=True)
+        aug_puzzle_idxs = jax.experimental.multihost_utils.process_allgather(batch['aug_puzzle_idx'], tiled=True)
         example_idxs = jax.experimental.multihost_utils.process_allgather(batch['example_idx'], tiled=True)
         d8_augs = jax.experimental.multihost_utils.process_allgather(batch['d8_aug'], tiled=True)
         colour_augs = jax.experimental.multihost_utils.process_allgather(batch['colour_aug'], tiled=True)
+
+        if last_batch:
+            y_preds = y_preds[:last_batch_size]
+            y_trues = y_trues[:last_batch_size]
+            puzzle_idxs = puzzle_idxs[:last_batch_size]
+            aug_puzzle_idxs = aug_puzzle_idxs[:last_batch_size]
+            example_idxs = example_idxs[:last_batch_size]
+            d8_augs = d8_augs[:last_batch_size]
+            colour_augs = colour_augs[:last_batch_size]
         
-        y_preds = np.array(y_preds.reshape(batch['x'].shape[0], 30, 30))
-        y_trues = np.array(y_trues.reshape(batch['x'].shape[0], 30, 30))
+        y_preds = np.array(y_preds.reshape(-1, 30, 30))
+        y_trues = np.array(y_trues.reshape(-1, 30, 30))
         
-        for i in range(batch['x'].shape[0]):
+        
+        for i in range(y_preds.shape[0]):
             # Unwrap scalars from batched fields
             puzzle_idx = int(puzzle_idxs[i][0])
             example_idx = int(example_idxs[i][0])
             d8_aug = int(d8_augs[i][0])
             colour_aug = colour_augs[i]
             y_pred = y_preds[i]
+            aug_puzzle_idx = int(aug_puzzle_idxs[i])
+
+            if jax.process_index() == 0:
+                with open("preds.jsonl", "a") as f:
+                    json.dump({"aug_puzzle_idx": aug_puzzle_idx, "example_idx": example_idx, "y_pred": y_pred.tolist()}, f)
+                    f.write("\n")
             
             y_pred = crop(y_pred)
             y_pred = grid_hash(inverse_d8_aug(inverse_colour_aug(y_pred, colour_aug), d8_aug))
@@ -133,13 +174,7 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
                 y_true = grid_hash(inverse_d8_aug(inverse_colour_aug(y_true, colour_aug), d8_aug))
                 preds[puzzle_idx][example_idx]['y_true'] = y_true
 
-            if y_pred not in preds[puzzle_idx][example_idx]['y_preds']:
-                preds[puzzle_idx][example_idx]['y_preds'][y_pred] = 1
-            else:
-                preds[puzzle_idx][example_idx]['y_preds'][y_pred] += 1
-    
-    if jax.process_index() == 0:
-        print(preds[list(preds.keys())[0]])
+            preds[puzzle_idx][example_idx]['y_preds'][y_pred] = preds[puzzle_idx][example_idx]['y_preds'].get(y_pred, 0) + 1
 
     # passes = {
     #     "abcde1g7": {
@@ -174,10 +209,10 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
 
     n_puzzles = len(passes)
     passes_reduced = {f"pass_{k}": n_true / n_puzzles for k, n_true in passes_reduced.items()}
-    
+    print(f"{cell_corrects=}, {cell_totals=}, {puzzle_corrects=}, {puzzle_totals=}, {n_puzzles=}")
     metrics = {
             **passes_reduced,
-            "cell_acc": cell_accs / n_samples,
-            "puzzle_acc": puzzle_accs / n_samples,
+            "cell_acc": cell_corrects / cell_totals,
+            "puzzle_acc": puzzle_corrects / puzzle_totals,
     }
     return metrics
