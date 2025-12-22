@@ -5,8 +5,10 @@ from dataclasses import dataclass
 
 import numpy as np
 import grain
+import jax
 from tqdm import tqdm
 from datasets.dataset import TranslateAndPad
+
 
 
 @dataclass(frozen=True)
@@ -62,7 +64,7 @@ class ArcExampleDataSource(grain.sources.RandomAccessDataSource):
             "y": np.asarray(example["y"], dtype=np.int32),
             "colour_aug": np.asarray(aug_puzzle["colour_aug"], dtype=np.int32),
             "d8_aug": np.asarray([aug_puzzle["d8_aug"]]),
-            "aug_puzzle_idx": np.asarray([aug_puzzle["aug_puzzle_idx"]]),
+            "aug_puzzle_idx": np.asarray(aug_puzzle["aug_puzzle_idx"]),
             "puzzle_idx": np.asarray([aug_puzzle["puzzle_idx"]]),
             "example_idx": np.asarray([pointer.example_idx]),
         }
@@ -80,7 +82,14 @@ class ArcExampleDataSource(grain.sources.RandomAccessDataSource):
 class PuzzleBatchSampler(grain.samplers.Sampler):
     """Sampler that replicates the original puzzle-wise batching logic."""
 
-    def __init__(self, data_source: ArcExampleDataSource, batch_size: int, seed: int = 0):
+    def __init__(
+        self,
+        data_source: ArcExampleDataSource,
+        batch_size: int,
+        seed: int = 0,
+        *,
+        shard_by_jax_process: bool = False,
+    ):
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
         self._data_source = data_source
@@ -91,11 +100,25 @@ class PuzzleBatchSampler(grain.samplers.Sampler):
             raise ValueError("Dataset is empty")
         self._puzzle_queue: list[str] = []
         self._record_keys: list[int] = []
+        self._shard_by_jax_process = shard_by_jax_process
+        self._process_index = jax.process_index() if shard_by_jax_process else 0
+        self._process_count = jax.process_count() if shard_by_jax_process else 1
+
+        if shard_by_jax_process and self._process_count <= 0:
+            raise ValueError("jax.process_count() must be positive")
+
     def __len__(self) -> int:
         # Effectively infinite stream of batches.
         return np.iinfo(np.int64).max
 
     def __getitem__(self, index: int) -> grain.RecordMetadata:
+        # When running multi-host, each host will run its own Python input pipeline.
+        # To avoid duplicated sampling across hosts, we deterministically slice a
+        # single global (infinite) sample stream across JAX processes.
+        #
+        # Host i consumes global indices: i, i + P, i + 2P, ...
+        if self._shard_by_jax_process:
+            index = index * self._process_count + self._process_index
         while index >= len(self._record_keys):
             self._append_batch()
         record_key = self._record_keys[index]
@@ -135,9 +158,20 @@ def get_data_loader(
     drop_remainder: bool = True,
     seed: int = 0,
     validation: bool = False,
+    shard_by_jax_process: bool = False,
 ) -> grain.DataLoader:
 
     data_source = ArcExampleDataSource(data_dir)
+
+    if shard_by_jax_process:
+        if batch_size % jax.process_count() != 0:
+            raise ValueError(
+                f"batch_size ({batch_size}) must be divisible by jax.process_count() ({jax.process_count()}) "
+                "when shard_by_jax_process=True"
+            )
+        per_process_batch_size = batch_size // jax.process_count()
+    else:
+        per_process_batch_size = batch_size
 
     if validation:
         sampler = grain.samplers.IndexSampler(
@@ -145,20 +179,24 @@ def get_data_loader(
             seed=seed,
             shuffle=False,
             num_epochs=1,
-            shard_options=grain.sharding.NoSharding(),
+            shard_options=grain.sharding.ShardByJaxProcess(drop_remainder=False)
+            if shard_by_jax_process
+            else grain.sharding.NoSharding(),
         )
         batch_drop = False
     else:
         sampler = PuzzleBatchSampler(
             data_source=data_source,
-            batch_size=batch_size,
+            batch_size=per_process_batch_size,
             seed=seed,
+            shard_by_jax_process=shard_by_jax_process,
         )
         batch_drop = drop_remainder
 
     operations = [
         TranslateAndPad(translate=translate, max_grid_size=max_grid_size),
-        grain.transforms.Batch(batch_size=batch_size, drop_remainder=batch_drop),
+        grain.transforms.Batch(batch_size=per_process_batch_size, drop_remainder=batch_drop),
+        
     ]
     return grain.DataLoader(
         data_source=data_source,

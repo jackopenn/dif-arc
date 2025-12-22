@@ -14,7 +14,7 @@ from sws import Config, run
 
 def get_config():
     cfg = Config()
-    cfg.input_dir = "data/arc-agi-1"
+    cfg.input_dir = "data/arc-agi-2"
     cfg.output_dir = lambda: f"{cfg.input_dir}-aug-concept-{cfg.n_augs}-v2"
     cfg.subsets = ["training", "evaluation", "concept"]
     cfg.test_set = "evaluation"
