@@ -1,3 +1,4 @@
+from collections import defaultdict
 import os
 import json
 from functools import partial
@@ -14,7 +15,7 @@ from sws import Config, run
 def get_config():
     cfg = Config()
     cfg.input_dir = "data/arc-agi-2"
-    cfg.output_dir = lambda: f"{cfg.input_dir}-aug-concept-{cfg.n_augs}"
+    cfg.output_dir = lambda: f"{cfg.input_dir}-aug-concept-{cfg.n_augs}-v2"
     cfg.subsets = ["training", "evaluation", "concept"]
     cfg.test_set = "evaluation"
     cfg.n_augs = 1000
@@ -55,7 +56,7 @@ def puzzle_hash(puzzle: dict):
     # Hash the puzzle for checking equivalence
     hashes = []
     for example in puzzle['examples']:
-        hashes.append(f"{grid_hash(example['x'])}|{grid_hash(example['y'])}")
+        hashes.append(f"{grid_hash(np.asarray(example['x']))}|{grid_hash(np.asarray(example['y']))}")
     hashes.sort()
     return hashlib.sha256("|".join(hashes).encode()).hexdigest()
 
@@ -145,7 +146,7 @@ def main(cfg):
             })
     
     key = jax.random.key(cfg.seed)
-    aug_puzzles = []
+    aug_puzzles = defaultdict(list)
     aug_puzzle_idx = 0
     for puzzle_idx, puzzle in enumerate(tqdm(puzzles, desc="augmenting")):
         # no augs
@@ -154,10 +155,17 @@ def main(cfg):
         base["puzzle_idx"] = puzzle_idx
         base["aug_puzzle_idx"] = aug_puzzle_idx
         base["d8_aug"] = 0 
-        base["colour_aug"] = np.arange(10)
-        aug_puzzles.append(base)
+        base["colour_aug"] = np.arange(10).tolist()
+        base["examples"] = [
+            {
+                "x": example["x"].tolist(),
+                "y": example["y"].tolist(),
+                "split": example["split"]
+            } for example in base["examples"]
+        ]
+        aug_puzzles[base["puzzle_id"]].append(base)
         puzzle_hashes = {puzzle_hash(base)}
-        
+
         # first augment has differnt idx to base
         aug_puzzle_idx += 1
 
@@ -177,13 +185,13 @@ def main(cfg):
                 "puzzle_id": puzzle['puzzle_id'],
                 "subset": puzzle['subset'],
                 "puzzle_idx": puzzle_idx,
-                "aug_puzzle_idx": aug_puzzle_idx,
-                "d8_aug": op_idx,
-                "colour_aug": colours,
+                "aug_puzzle_idx": int(aug_puzzle_idx),
+                "d8_aug": int(op_idx),
+                "colour_aug": colours.tolist(),
                 "examples": [
                     {
-                        "x": colour_aug(d8_aug(example['x'], op_idx), colours),
-                        "y": colour_aug(d8_aug(example['y'], op_idx), colours),
+                        "x": colour_aug(d8_aug(example['x'], op_idx), colours).tolist(),
+                        "y": colour_aug(d8_aug(example['y'], op_idx), colours).tolist(),
                         "split": example['split']
                     } for example in puzzle['examples']
                 ]
@@ -194,7 +202,8 @@ def main(cfg):
             # print(hashed_puzzle)
             if hashed_puzzle not in puzzle_hashes:
                 # print(op_idx, colours)
-                aug_puzzles.append(aug_puzzle)
+                # aug_puzzles.append(aug_puzzle)
+                aug_puzzles[aug_puzzle["puzzle_id"]].append(aug_puzzle)
                 puzzle_hashes.add(hashed_puzzle)
                 aug_puzzle_idx += 1
 
@@ -204,58 +213,103 @@ def main(cfg):
         if len(puzzle_hashes) < cfg.n_augs + 1:
             print(f"WARNING: only {len(puzzle_hashes)} augs found for puzzle {puzzle['puzzle_id']}")
 
-    flat_aug_puzzles = []
+    train_puzzles = defaultdict(list)
+    test_puzzles = defaultdict(list)
+    for puzzle_id, aug_puzzles in aug_puzzles.items():
+        for aug_puzzle in aug_puzzles:
+            if aug_puzzle['subset'] == cfg.test_set:
+                aug_puzzle_test = aug_puzzle.copy()
+                aug_puzzle_test['examples'] = list(filter(lambda x: x['split'] == 'test', aug_puzzle_test['examples']))
+                test_puzzles[puzzle_id].append(aug_puzzle_test)
+
+                aug_puzzle_train = aug_puzzle.copy()
+                aug_puzzle_train['examples'] = list(filter(lambda x: x['split'] == 'train', aug_puzzle_train['examples']))
+                train_puzzles[puzzle_id].append(aug_puzzle_train)
+            else:
+                train_puzzles[puzzle_id].append(aug_puzzle)
+        
+
+
+
+
+    train_output_path = f"{cfg.output_dir}/train"
+    test_output_path = f"{cfg.output_dir}/test"
+    os.makedirs(train_output_path, exist_ok=True)
+    os.makedirs(test_output_path, exist_ok=True)
     n_train_aug_puzzles = 0
     n_test_aug_puzzles = 0
-    for puzzle in aug_puzzles:
-        n_train_aug_puzzles += 1
-        if puzzle['subset'] == cfg.test_set:
-            n_test_aug_puzzles += 1
-        for idx, example in enumerate(puzzle['examples']):
-            flat_aug_puzzles.append({
-                "puzzle_id": puzzle['puzzle_id'],
-                "subset": puzzle['subset'],
-                "d8_aug": puzzle['d8_aug'],
-                "colour_aug": puzzle['colour_aug'],
-                "puzzle_idx": puzzle['puzzle_idx'],
-                "aug_puzzle_idx": puzzle['aug_puzzle_idx'],
-                "example_idx": idx,
-                "x": example['x'],
-                "y": example['y'],
-                "split": example['split']
-            })
-    
-    random.seed(cfg.seed)
-    random.shuffle(flat_aug_puzzles)
-
-    os.makedirs(cfg.output_dir, exist_ok=True)
-    train_output_path = f"{cfg.output_dir}/train.jsonl"
-    test_output_path = f"{cfg.output_dir}/test.jsonl"
     n_train_aug_examples = 0
     n_test_aug_examples = 0
-    with open(train_output_path, 'w') as train_file:
-        with open(test_output_path, 'w') as test_file:
-            for aug_puzzle in tqdm(flat_aug_puzzles, desc="writing"):
-                if aug_puzzle['subset'] == cfg.test_set and aug_puzzle["split"] == "test":
-                    out_file = test_file
-                    n_test_aug_examples += 1
-                else:
-                    out_file = train_file
-                    n_train_aug_examples += 1
-                out_puzzle = {
-                    "puzzle_id": aug_puzzle['puzzle_id'],
-                    "subset": aug_puzzle['subset'],
-                    "split": aug_puzzle['split'],
-                    "d8_aug": int(aug_puzzle['d8_aug']),
-                    "colour_aug": aug_puzzle['colour_aug'].tolist(),
-                    "puzzle_idx": int(aug_puzzle['puzzle_idx']),
-                    "aug_puzzle_idx": int(aug_puzzle['aug_puzzle_idx']),
-                    "example_idx": int(aug_puzzle['example_idx']),
-                    "x": aug_puzzle['x'].tolist(),
-                    "y": aug_puzzle['y'].tolist()
-                }
-                json.dump(out_puzzle, out_file)
-                out_file.write("\n")
+    for puzzle_id, aug_puzzles in tqdm(train_puzzles.items(), desc="writing train"):
+
+        with open(f"{train_output_path}/{puzzle_id}.jsonl", 'w') as file:
+            for aug_puzzle in aug_puzzles:
+                json.dump(aug_puzzle, file)
+                file.write("\n")
+                n_train_aug_examples += len(aug_puzzle['examples'])
+                n_train_aug_puzzles += 1
+    for puzzle_id, aug_puzzles in tqdm(test_puzzles.items(), desc="writing test"):
+        with open(f"{test_output_path}/{puzzle_id}.jsonl", 'w') as file:
+            for aug_puzzle in aug_puzzles:
+                json.dump(aug_puzzle, file)
+                file.write("\n")
+                n_test_aug_examples += len(aug_puzzle['examples'])
+                n_test_aug_puzzles += 1
+    
+    
+
+    # flat_aug_puzzles = []
+    # n_train_aug_puzzles = 0
+    # n_test_aug_puzzles = 0
+    # for puzzle in aug_puzzles:
+    #     n_train_aug_puzzles += 1
+    #     if puzzle['subset'] == cfg.test_set:
+    #         n_test_aug_puzzles += 1
+    #     for idx, example in enumerate(puzzle['examples']):
+    #         flat_aug_puzzles.append({
+    #             "puzzle_id": puzzle['puzzle_id'],
+    #             "subset": puzzle['subset'],
+    #             "d8_aug": puzzle['d8_aug'],
+    #             "colour_aug": puzzle['colour_aug'],
+    #             "puzzle_idx": puzzle['puzzle_idx'],
+    #             "aug_puzzle_idx": puzzle['aug_puzzle_idx'],
+    #             "example_idx": idx,
+    #             "x": example['x'],
+    #             "y": example['y'],
+    #             "split": example['split']
+    #         })
+    
+    # random.seed(cfg.seed)
+    # random.shuffle(flat_aug_puzzles)
+
+    # os.makedirs(cfg.output_dir, exist_ok=True)
+    # train_output_path = f"{cfg.output_dir}/train.jsonl"
+    # test_output_path = f"{cfg.output_dir}/test.jsonl"
+    # n_train_aug_examples = 0
+    # n_test_aug_examples = 0
+    # with open(train_output_path, 'w') as train_file:
+    #     with open(test_output_path, 'w') as test_file:
+    #         for aug_puzzle in tqdm(flat_aug_puzzles, desc="writing"):
+    #             if aug_puzzle['subset'] == cfg.test_set and aug_puzzle["split"] == "test":
+    #                 out_file = test_file
+    #                 n_test_aug_examples += 1
+    #             else:
+    #                 out_file = train_file
+    #                 n_train_aug_examples += 1
+    #             out_puzzle = {
+    #                 "puzzle_id": aug_puzzle['puzzle_id'],
+    #                 "subset": aug_puzzle['subset'],
+    #                 "split": aug_puzzle['split'],
+    #                 "d8_aug": int(aug_puzzle['d8_aug']),
+    #                 "colour_aug": aug_puzzle['colour_aug'].tolist(),
+    #                 "puzzle_idx": int(aug_puzzle['puzzle_idx']),
+    #                 "aug_puzzle_idx": int(aug_puzzle['aug_puzzle_idx']),
+    #                 "example_idx": int(aug_puzzle['example_idx']),
+    #                 "x": aug_puzzle['x'].tolist(),
+    #                 "y": aug_puzzle['y'].tolist()
+    #             }
+    #             json.dump(out_puzzle, out_file)
+    #             out_file.write("\n")
 
     metadata = {
         "config": cfg.to_dict(),

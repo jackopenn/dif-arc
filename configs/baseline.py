@@ -62,7 +62,7 @@ def get_config():
 
     cfg.max_steps = 1_000_000
 
-    cfg.data.data_dir = "data/arc-agi-2-aug-concept-1000"
+    cfg.data.data_dir = "data/arc-agi-2-aug-concept-1000-v2"
     cfg.data.train_batch_size = 768
     cfg.data.eval_batch_size = 768
     cfg.data.translate = "fixed"
@@ -77,6 +77,6 @@ def get_config():
     cfg.log_every = lambda: cfg.eval.eval_every
     
     cfg.restore_from_checkpoint = False
-    cfg.ckpt_dir = "gs://trm-jax-123/checkpoints" 
+    cfg.ckpt_dir = "gs://trm-jax-123/checkpoints-1" 
 
     return cfg

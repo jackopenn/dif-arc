@@ -11,7 +11,9 @@ from sws import run
 import wandb
 import orbax.checkpoint as ocp
 from datetime import datetime
-from dataset import get_data_loader
+from datasets.dataset_v2 import get_data_loader
+# from datasets.dataset import get_data_loader
+# from datasets.torch_dataset import get_data_loader
 from modelling.model import Model
 from modelling.optimizers import adamw_atan2, sign_sgdw
 from utils import MetricLogger
@@ -195,6 +197,8 @@ def main(cfg):
         return y, z
 
 
+    valid_cond = lambda y_true: y_true > 0
+    
     def loss_fn(model, x_input, aug_puzzle_idx, y, z, y_true, n):
         # forward pass
         x = model.input_embedding(x_input, aug_puzzle_idx)
@@ -206,12 +210,12 @@ def main(cfg):
         # y_loss = optax.softmax_cross_entropy_with_integer_labels(
             y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float64),
             y_true.reshape(-1)
-        ).mean(where=y_true.reshape(-1) < 11)
+        ).mean(where=valid_cond(y_true.reshape(-1)))
         if cfg.recursion.act:
             # TODO: only compute for halted ?
             q_loss = optax.sigmoid_binary_cross_entropy(
                 q_logits.reshape(-1).astype(jnp.float32),
-                (y_preds == y_true).all(axis=-1, where=y_true < 11)
+                (y_preds == y_true).all(axis=-1, where=valid_cond(y_true))
             ).mean()
         else:
             q_loss = 0
@@ -247,8 +251,8 @@ def main(cfg):
 
         # compute metrics (11 = padding)
         cell_correct = y_preds == carry.y_true # (batch_size, 900)
-        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 11)
-        cell_acc = cell_correct.mean(where=(carry.y_true < 11) & (carry.halted[..., jnp.newaxis]))
+        puzzle_correct = cell_correct.all(axis=-1, where=valid_cond(carry.y_true))
+        cell_acc = cell_correct.mean(where=valid_cond(carry.y_true) & (carry.halted[..., jnp.newaxis]))
         puzzle_acc = puzzle_correct.mean(where=carry.halted)
         metrics = {
             "loss": loss,
@@ -307,29 +311,35 @@ def main(cfg):
 
     # init data loader
     train_data_loader = get_data_loader(
-        cfg.data.data_dir + "/train.jsonl",
+        cfg.data.data_dir + "/train",
         cfg.data.train_batch_size,
         translate=cfg.data.translate,
         max_grid_size=cfg.data.max_grid_size,
-        repeat=True,
+        # repeat=True,
         drop_remainder=True,
-        shard_by_jax_process=True
+        shard_by_jax_process=(jax.process_count() > 1)
     )
+    # train_data_loader, _ = get_data_loader(
+    #     cfg.data.data_dir,
+    #     "train",
+    #     cfg.data.train_batch_size
+    # )
     val_data_loader_factory = lambda: get_data_loader(
-        cfg.data.data_dir + "/test.jsonl",
+        cfg.data.data_dir + "/test",
         cfg.data.eval_batch_size,
         translate=False,
         max_grid_size=cfg.data.max_grid_size,
-        repeat=False,
+        # repeat=False,
         drop_remainder=False,
-        shard_by_jax_process=True
-    )
+        shard_by_jax_process=(jax.process_count() > 1)
+    ) # tmp drop remainder because of sharding ( so eval on n lik 99% subset)
 
     ckpt_dir = cfg.ckpt_dir if cfg.ckpt_dir.startswith("gs://") else os.path.join(os.getcwd(), cfg.ckpt_dir)
     if jax.process_index() == 0:
         os.makedirs(ckpt_dir, exist_ok=True)
     ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
     ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
+
 
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
@@ -361,7 +371,7 @@ def main(cfg):
 
         z_init = restored.z_init
         y_init = restored.y_init
-        # train_iter = restored.data_loader
+        train_iter = restored.data_loader
     else:
         step = 0
         if cfg.use_ema:
@@ -369,9 +379,12 @@ def main(cfg):
 
     carry = init_carry(shard_data(next(train_iter)), z_init, y_init)
 
+
+    import numpy as np
     t0 = time.perf_counter()
     while step < cfg.max_steps + 1:
-        batch = shard_data(next(train_iter))
+        batch = next(train_iter)
+        batch = shard_data(batch)
 
         if jax.process_index() == 0 and step == 10: 
             jax.profiler.start_trace(profile_dir, profiler_options=profiler_options)
@@ -419,9 +432,6 @@ def main(cfg):
             )
             if jax.process_index() == 0:
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step})
-                if cfg.wandb:
-                    wandb.log_artifact(f"{os.getcwd()}/preds.jsonl", name=f"run_{wandb.run.id}_preds", type="preds", aliases=[f"step_{step}"])   
-                    os.remove(f"{os.getcwd()}/preds.jsonl")
         
         step += 1
 
