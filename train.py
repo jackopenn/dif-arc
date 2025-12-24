@@ -8,13 +8,14 @@ from jax.sharding import NamedSharding, PartitionSpec as P
 from flax import nnx, struct
 import optax
 from sws import run
+from torch._higher_order_ops.run_const_graph import run_const_graph_fake_tensor_mode
 import wandb
 import orbax.checkpoint as ocp
 from datetime import datetime
 from dataset import get_data_loader
 from modelling.model import Model
 from modelling.optimizers import adamw_atan2, sign_sgdw
-from utils import MetricLogger
+from utils import DummyWandb, MetricLogger
 from evaluate import evaluate
 from functools import partial
 
@@ -238,7 +239,9 @@ def main(cfg):
         # weight decay on puzzle embeddings
         model_state = nnx.state(model)
         model_state.puzzle_emb.embedding = model_state.puzzle_emb.embedding.at[carry.aug_puzzle_idx].add(
-            - puzzle_emb_schedule(optimizer.step) * cfg.optim.puzzle_emb_weight_decay * model_state.puzzle_emb.embedding[carry.aug_puzzle_idx]
+            - puzzle_emb_schedule(optimizer.step)
+            * cfg.optim.puzzle_emb_weight_decay
+            * model_state.puzzle_emb.embedding[carry.aug_puzzle_idx]
         )
         nnx.update(model, model_state)
 
@@ -282,13 +285,10 @@ def main(cfg):
     
     # init logging 
     if jax.process_index() == 0:
-        if cfg.wandb:
-            wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict())
-            train_logger = MetricLogger(cfg.data.train_batch_size, prefix="train", buffer=True, wandb=wandb)
-            val_logger = MetricLogger(cfg.data.eval_batch_size, prefix="val", buffer=False, wandb=wandb)
-        else:
-            train_logger = MetricLogger(cfg.data.train_batch_size, prefix="train", buffer=True, wandb=None)
-            val_logger = MetricLogger(cfg.data.eval_batch_size, prefix="val", buffer=False, wandb=None)
+        run = wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict()) if cfg.wandb else DummyWandb()
+        train_logger = MetricLogger(cfg.data.train_batch_size, prefix="train", buffer=True, wandb_run=run)
+        val_logger = MetricLogger(cfg.data.eval_batch_size, prefix="val", buffer=False, wandb_run=run)
+
 
     # count params
     _, params = nnx.split(model, nnx.Param)
@@ -324,10 +324,12 @@ def main(cfg):
         drop_remainder=False,
         shard_by_jax_process=True
     )
-
-    ckpt_dir = cfg.ckpt_dir if cfg.ckpt_dir.startswith("gs://") else os.path.join(os.getcwd(), cfg.ckpt_dir)
+    
     if jax.process_index() == 0:
+        ckpt_dir_prefix = cfg.ckpt_dir if cfg.ckpt_dir.startswith("gs://") else os.path.join(os.getcwd(), cfg.ckpt_dir)
+        ckpt_dir = os.path.join(ckpt_dir_prefix, run.id)
         os.makedirs(ckpt_dir, exist_ok=True)
+    ckpt_dir = jax.experimental.multihost_utils.broadcast_one_to_all(ckpt_dir).item()
     ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
     ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
 
@@ -385,8 +387,7 @@ def main(cfg):
             )
         if jax.process_index() == 0 and step == 15:
             jax.profiler.stop_trace()
-            if cfg.wandb:
-                wandb.log_artifact(f"{os.getcwd()}/{profile_dir}/", name=f"run_{wandb.run.id}_profile", type="profile")
+            run.log_artifact(f"{os.getcwd()}/{profile_dir}/", name=f"run_{wandb.run.id}_profile", type="profile")
 
         step_time = time.perf_counter() - t0
         t0 = time.perf_counter()
@@ -406,8 +407,8 @@ def main(cfg):
                 args["ema_model"] = ocp.args.StandardSave(nnx.state(ema_model))
             ckpt_mngr.save(step, args=ocp.args.Composite(**args))
             ckpt_mngr.wait_until_finished()
-            if jax.process_index() == 0 and cfg.wandb:
-                wandb.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])    
+            if jax.process_index() == 0:
+                run_const_graph_fake_tensor_mode.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])    
 
         if step > 0 and step % cfg.eval.eval_every == 0:
             seq_len = cfg.model.puzzle_emb_len + cfg.model.input_size * cfg.model.input_size
@@ -419,9 +420,8 @@ def main(cfg):
             )
             if jax.process_index() == 0:
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step})
-                if cfg.wandb:
-                    wandb.log_artifact(f"{os.getcwd()}/preds.jsonl", name=f"run_{wandb.run.id}_preds", type="preds", aliases=[f"step_{step}"])   
-                    os.remove(f"{os.getcwd()}/preds.jsonl")
+                run.log_artifact(f"{os.getcwd()}/preds.jsonl", name=f"run_{wandb.run.id}_preds", type="preds", aliases=[f"step_{step}"])   
+                os.remove(f"{os.getcwd()}/preds.jsonl")
         
         step += 1
 

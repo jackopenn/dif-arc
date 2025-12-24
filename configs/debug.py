@@ -62,7 +62,7 @@ def get_config():
 
     cfg.max_steps = 100_000
 
-    cfg.data.data_dir = "data/arc-agi-2-aug-concept-2"
+    cfg.data.data_dir = "data/arc-agi-1-aug-concept-0"
     cfg.data.train_batch_size = 4
     cfg.data.eval_batch_size = 4
     cfg.data.translate = "fixed"

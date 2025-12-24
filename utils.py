@@ -1,11 +1,25 @@
 import jax
+from datetime import datetime
+
+# https://github.com/karpathy/nanochat/blob/bc51da8baca66c54606bdd75c861c82ced90dcb0/nanochat/common.py#L183C1-L190C13
+class DummyWandb:
+    def __init__(self):
+        self.id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    def log(self, *args, **kwargs):
+        pass
+    def log_artifact(self, *args, **kwargs):
+        pass
+    def log_model(self, *args, **kwargs):
+        pass
+    def finish(self):
+        pass
 
 class MetricLogger:
-    def __init__(self, batch_size, prefix, buffer=True, wandb=None):
+    def __init__(self, batch_size, prefix, buffer=True, wandb_run=None):
         self.batch_size = batch_size
         self.prefix = prefix
         self.buffer = buffer
-        self.wandb = wandb
+        self.wandb_run = wandb_run
 
         self.prev_metrics = None
 
@@ -44,6 +58,6 @@ class MetricLogger:
         log_metrics = jax.tree.map(lambda x: float(x), log_metrics)
         log_metrics["samples_per_second"] = self.batch_size / log_metrics["step_time"]
         self._pretty_print(log_metrics, step)
-        if self.wandb:
+        if self.wandb_run:
             log_metrics = {f"{self.prefix}/{k}": v for k, v in log_metrics.items()}
-            self.wandb.log(log_metrics, step=step)
+            self.wandb_run.log(log_metrics, step=step)
