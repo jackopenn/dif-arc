@@ -18,14 +18,9 @@ from utils import DummyWandb, MetricLogger
 from evaluate import evaluate
 from functools import partial
 
-# Constants
-PADDING_TOKEN = 11  # Token value used for padding in grids
-Q_LOSS_WEIGHT = 0.5  # Weight for the halting (q) loss term
+PADDING_TOKEN = 11
 
-# TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
- 
 def main(cfg):
-    
 
     if cfg.parallel.n_devices > 1:
         jax.distributed.initialize()
@@ -154,6 +149,7 @@ def main(cfg):
                 * jax.random.randint(subkey2, step.shape, minval=2, maxval=N_supervision + 1)
             )
             halted = halted & (step >= min_halt_steps)
+            
         new_carry = Carry(
             z=z,
             y=y,
@@ -163,6 +159,7 @@ def main(cfg):
             step=step,
             halted=halted,
         )
+        
         assert new_carry.z.shape == carry.z.shape
         assert new_carry.y.shape == carry.y.shape
         assert new_carry.x_input.shape == carry.x_input.shape
@@ -203,17 +200,17 @@ def main(cfg):
         # compute losses
         y_loss = stablemax_cross_entropy_with_integer_labels(
         # y_loss = optax.softmax_cross_entropy_with_integer_labels(
-            y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float64),
+            y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float32),
             y_true.reshape(-1)
-        ).mean(where=y_true.reshape(-1) < PADDING_TOKEN)
+        ).mean(where=y_true.reshape(-1) != PADDING_TOKEN)
         if use_act:
             q_loss = optax.sigmoid_binary_cross_entropy(
                 q_logits.reshape(-1).astype(jnp.float32),
-                (y_preds == y_true).all(axis=-1, where=y_true < PADDING_TOKEN)
+                (y_preds == y_true).all(axis=-1, where=y_true != PADDING_TOKEN)
             ).mean()
         else:
             q_loss = 0
-        loss = y_loss + Q_LOSS_WEIGHT * q_loss
+        loss = y_loss + 0.5 * q_loss # 0.5* why?
         return loss, (y, z, y_loss, q_loss, y_preds, q_logits)
     
     
@@ -245,9 +242,9 @@ def main(cfg):
         # update halt flag
         carry, key = post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, use_act, key)
 
-        cell_correct = y_preds == carry.y_true # (batch_size, 900)
-        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < PADDING_TOKEN)
-        cell_acc = cell_correct.mean(where=(carry.y_true < PADDING_TOKEN) & (carry.halted[..., jnp.newaxis]))
+        cell_correct = y_preds == carry.y_true
+        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true != PADDING_TOKEN)
+        cell_acc = cell_correct.mean(where=(carry.y_true != PADDING_TOKEN) & (carry.halted[..., jnp.newaxis]))
         puzzle_acc = puzzle_correct.mean(where=carry.halted)
         metrics = {
             "loss": loss,
