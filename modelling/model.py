@@ -21,62 +21,23 @@ class Model(nnx.Module):
         puzzle_vocab_size,
         use_bias,
         puzzle_emb_len,
-        vision_mode,
-        patch_size,
         input_size,
         rngs
     ):
         self.puzzle_emb_len = puzzle_emb_len
-        self.vision_mode = vision_mode
         self.input_size = input_size
-        self.patch_size = patch_size
         self.rope_theta = rope_theta
-        if not self.vision_mode:
-            if self.rope_theta == "learned":
-                self.pos_embed = nnx.Embed(
-                    900 + puzzle_emb_len,
-                    hidden_dim,
-                    dtype=jnp.bfloat16,
-                    embedding_init=nnx.initializers.truncated_normal(
-                        stddev=jnp.reciprocal(jnp.sqrt(hidden_dim))
-                    ),
-                    rngs=rngs
-                )
-        else:
-            self.patch_proj = nnx.Conv(
+        self.seq_len = puzzle_emb_len + input_size * input_size
+        if self.rope_theta == "learned":
+            self.pos_embed = nnx.Embed(
+                self.seq_len,
                 hidden_dim,
-                hidden_dim,
-                (patch_size, patch_size),
-                strides=patch_size,
-                use_bias=use_bias,
                 dtype=jnp.bfloat16,
+                embedding_init=nnx.initializers.truncated_normal(
+                    stddev=jnp.reciprocal(jnp.sqrt(hidden_dim))
+                ),
                 rngs=rngs
             )
-            self.patch_unproj = nnx.ConvTranspose(
-                hidden_dim,
-                hidden_dim,
-                (patch_size, patch_size),
-                strides=patch_size,
-                use_bias=use_bias,
-                dtype=jnp.bfloat16,
-                rngs=rngs
-            )
-            if not self.rope_theta:
-                self.pos_embed_horizontal = nnx.Embed(
-                    input_size,
-                    hidden_dim // 2,
-                    dtype=jnp.bfloat16,
-                    embedding_init=nnx.initializers.truncated_normal(stddev=0),
-                    rngs=rngs
-                )
-                self.pos_embed_vertical = nnx.Embed(
-                    input_size,
-                    hidden_dim // 2,
-                    dtype=jnp.bfloat16,
-                    embedding_init=nnx.initializers.truncated_normal(stddev=0),
-                    rngs=rngs
-                )
-
         self.puzzle_emb = nnx.Embed(
             puzzle_vocab_size,
             hidden_dim,
@@ -121,39 +82,21 @@ class Model(nnx.Module):
         )
     
     def input_embedding(self, x, aug_puzzle_idx):
-        puzzle_emb = self.puzzle_emb(aug_puzzle_idx)[:, jnp.newaxis, :] # [batch_size, 1, hidden_dim]
+        puzzle_emb = self.puzzle_emb(aug_puzzle_idx)[:, jnp.newaxis, :]
         B, _, D = puzzle_emb.shape
         if self.puzzle_emb_len > 1:
             pad_len = self.puzzle_emb_len - 1
-            puzzle_emb = jnp.pad(puzzle_emb, ((0, 0), (0, pad_len), (0, 0)), mode='constant', constant_values=0) # [batch_size, puzzle_emb_len, hidden_dim]
-        if not self.vision_mode:
-            seq_emb = self.embed(x) # [batch_size, seq_len, hidden_dim]
-            embedding = jnp.concatenate([puzzle_emb, seq_emb], axis=1)
-            if self.rope_theta == "learned":
-                embedding = 0.707106781 * (embedding + self.pos_embed(jnp.arange(embedding.shape[1])))
-        else:
-            x = x.reshape(B, self.input_size, self.input_size)
-            image_emb = self.embed(x) # [batch_size, input_size, input_size, hidden_dim]
-            if self.rope_theta == "learned":
-                horizontal_pos_emb = jnp.concatenate([jnp.zeros((self.input_size, D // 2)), self.pos_embed_horizontal(jnp.arange(self.input_size))], axis=-1) # [input_size, hidden_dim]
-                vertical_pos_emb = jnp.concatenate([self.pos_embed_vertical(jnp.arange(self.input_size)), jnp.zeros((self.input_size, D // 2))], axis=-1) # [input_size, hidden_dim]
-                image_emb = image_emb + horizontal_pos_emb[None, :, None, :] + vertical_pos_emb[None, None, :, :] # [batch_size, input_size, input_size, hidden_dim]
-            image_emb = self.patch_proj(image_emb) # [batch_size, input_size//patch_size, input_size//patch_size, hidden_dim]
-            image_emb = image_emb.reshape(B, -1, D)
-            embedding = jnp.concatenate([puzzle_emb, image_emb], axis=1)
-        
-        # scale
+            puzzle_emb = jnp.pad(puzzle_emb, ((0, 0), (0, pad_len), (0, 0)), mode='constant', constant_values=0)
+        seq_emb = self.embed(x)
+        embedding = jnp.concatenate([puzzle_emb, seq_emb], axis=1)
+        if self.rope_theta == "learned":
+            embedding = 0.707106781 * (embedding + self.pos_embed(jnp.arange(embedding.shape[1])))
         embedding = embedding * jnp.sqrt(D)
         return embedding
 
 
     def output_head(self, x):
         x = x[:, self.puzzle_emb_len:, :]
-        B, S, D = x.shape
-        if self.vision_mode:
-            x = x.reshape(B, self.input_size // self.patch_size, self.input_size // self.patch_size, D) # [batch_size, input_size//patch_size, input_size//patch_size, hidden_dim]
-            x = self.patch_unproj(x) # [batch_size, input_size, input_size, hidden_dim]
-            x = x.reshape(B, -1, D) # [batch_size, input_size * input_size, hidden_dim]
         return self.unembed(x)
 
     def q_head(self, x):

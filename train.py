@@ -86,10 +86,7 @@ def main(cfg):
         """initialize the carry with the initial data"""
         batch_size = batch['x'].shape[0]
         hidden_dim = z_init.shape[-1]
-        if cfg.model.vision_mode:
-            puzzle_len = cfg.model.input_size // cfg.model.patch_size * cfg.model.input_size // cfg.model.patch_size
-        else:
-            puzzle_len = cfg.model.input_size * cfg.model.input_size
+        puzzle_len = cfg.model.input_size * cfg.model.input_size
         seq_len = puzzle_len + cfg.model.puzzle_emb_len
         z_init = jnp.broadcast_to(z_init, (batch_size, seq_len, hidden_dim))
         y_init = jnp.broadcast_to(y_init, (batch_size, seq_len, hidden_dim))
@@ -97,7 +94,6 @@ def main(cfg):
             z_init = jax.device_put(z_init, data_sharding)
             y_init = jax.device_put(y_init, data_sharding)
         
-
         carry = Carry(
             z=z_init,                                         # (batch_size, seq_len, hidden_dim)
             y=y_init,                                         # (batch_size, seq_len, hidden_dim)
@@ -178,7 +174,6 @@ def main(cfg):
     def stablemax_cross_entropy_with_integer_labels(logits, labels, eps=1e-30):
         pos = jnp.log(jnp.maximum(logits, 0.) + 1.0 + eps)
         neg = -jnp.log(jnp.maximum(1.0 - logits, eps))
-
         s_logits = jnp.where(logits >= 0, pos, neg)
         return optax.softmax_cross_entropy_with_integer_labels(s_logits, labels)
 
@@ -209,7 +204,6 @@ def main(cfg):
             y_true.reshape(-1)
         ).mean(where=y_true.reshape(-1) < 11)
         if cfg.recursion.act:
-            # TODO: only compute for halted ?
             q_loss = optax.sigmoid_binary_cross_entropy(
                 q_logits.reshape(-1).astype(jnp.float32),
                 (y_preds == y_true).all(axis=-1, where=y_true < 11)
@@ -283,6 +277,7 @@ def main(cfg):
 
         return carry, metrics, key
     
+
     # init logging 
     if jax.process_index() == 0:
         run = wandb.init(project="arc", entity="jackpenn", config=cfg.to_dict()) if cfg.wandb else DummyWandb()
@@ -297,6 +292,7 @@ def main(cfg):
     num_params -= puzzle_emb_params
     print(f"{num_params=}, {puzzle_emb_params=}")
     del params
+    
     
     # init latents
     key, y_key, z_key = jax.random.split(key, 3)
@@ -324,7 +320,8 @@ def main(cfg):
         drop_remainder=False,
         shard_by_jax_process=True
     )
-    
+
+
     if jax.process_index() == 0:
         ckpt_dir_prefix = cfg.ckpt_dir if cfg.ckpt_dir.startswith("gs://") else os.path.join(os.getcwd(), cfg.ckpt_dir)
         ckpt_dir = os.path.join(ckpt_dir_prefix, run.id)
@@ -332,6 +329,7 @@ def main(cfg):
     ckpt_dir = jax.experimental.multihost_utils.broadcast_one_to_all(ckpt_dir).item()
     ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
     ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
+
 
     # init profiler
     profiler_options = jax.profiler.ProfileOptions()
@@ -387,7 +385,7 @@ def main(cfg):
             )
         if jax.process_index() == 0 and step == 15:
             jax.profiler.stop_trace()
-            run.log_artifact(f"{os.getcwd()}/{profile_dir}/", name=f"run_{wandb.run.id}_profile", type="profile")
+            run.log_artifact(f"{os.getcwd()}/{profile_dir}/", name=f"run_{run.id}_profile", type="profile")
 
         step_time = time.perf_counter() - t0
         t0 = time.perf_counter()
@@ -408,7 +406,7 @@ def main(cfg):
             ckpt_mngr.save(step, args=ocp.args.Composite(**args))
             ckpt_mngr.wait_until_finished()
             if jax.process_index() == 0:
-                run_const_graph_fake_tensor_mode.log_model(f"{ckpt_dir}/{step}", name=f"{wandb.run.id}_model", aliases=[f"step_{step}"])    
+                run.log_model(f"{ckpt_dir}/{step}", name=f"{run.id}_model", aliases=[f"step_{step}"])    
 
         if step > 0 and step % cfg.eval.eval_every == 0:
             seq_len = cfg.model.puzzle_emb_len + cfg.model.input_size * cfg.model.input_size
@@ -420,9 +418,8 @@ def main(cfg):
             )
             if jax.process_index() == 0:
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step})
-                run.log_artifact(f"{os.getcwd()}/preds.jsonl", name=f"run_{wandb.run.id}_preds", type="preds", aliases=[f"step_{step}"])   
+                run.log_artifact(f"{os.getcwd()}/preds.jsonl", name=f"run_{run.id}_preds", type="preds", aliases=[f"step_{step}"])   
                 os.remove(f"{os.getcwd()}/preds.jsonl")
-        
         step += 1
 
 
