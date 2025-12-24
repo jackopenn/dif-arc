@@ -7,8 +7,7 @@ import jax.numpy as jnp
 from jax.sharding import NamedSharding, PartitionSpec as P
 from flax import nnx, struct
 import optax
-from sws import run
-from torch._higher_order_ops.run_const_graph import run_const_graph_fake_tensor_mode
+from sws import run as sws_run
 import wandb
 import orbax.checkpoint as ocp
 from datetime import datetime
@@ -19,7 +18,11 @@ from utils import DummyWandb, MetricLogger
 from evaluate import evaluate
 from functools import partial
 
- # TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
+# Constants
+PADDING_TOKEN = 11  # Token value used for padding in grids
+Q_LOSS_WEIGHT = 0.5  # Weight for the halting (q) loss term
+
+# TODO: fix crop function to also crop top/left based on bottom/right border. tmp solution is translate=False on val set.
  
 def main(cfg):
     
@@ -138,11 +141,11 @@ def main(cfg):
         return new_carry
         
 
-    def post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, key):
+    def post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, use_act, key):
         """update the halt flag if step >= N_supervision or q_logits > 0"""
         step = carry.step + 1
         halted = step >= N_supervision
-        if cfg.recursion.act:
+        if use_act:
             halted = halted | (q_logits.reshape(-1) > 0)
         if halt_explore_prob > 0:
             key, subkey, subkey2 = jax.random.split(key, 3)
@@ -191,7 +194,7 @@ def main(cfg):
         return y, z
 
 
-    def loss_fn(model, x_input, aug_puzzle_idx, y, z, y_true, n):
+    def loss_fn(model, x_input, aug_puzzle_idx, y, z, y_true, n, use_act):
         # forward pass
         x = model.input_embedding(x_input, aug_puzzle_idx)
         y, z = latent_recursion(model, x, y, z, n)
@@ -202,20 +205,20 @@ def main(cfg):
         # y_loss = optax.softmax_cross_entropy_with_integer_labels(
             y_logits.reshape(-1, y_logits.shape[-1]).astype(jnp.float64),
             y_true.reshape(-1)
-        ).mean(where=y_true.reshape(-1) < 11)
-        if cfg.recursion.act:
+        ).mean(where=y_true.reshape(-1) < PADDING_TOKEN)
+        if use_act:
             q_loss = optax.sigmoid_binary_cross_entropy(
                 q_logits.reshape(-1).astype(jnp.float32),
-                (y_preds == y_true).all(axis=-1, where=y_true < 11)
+                (y_preds == y_true).all(axis=-1, where=y_true < PADDING_TOKEN)
             ).mean()
         else:
             q_loss = 0
-        loss = y_loss + 0.5 * q_loss # 0.5* why?
+        loss = y_loss + Q_LOSS_WEIGHT * q_loss
         return loss, (y, z, y_loss, q_loss, y_preds, q_logits)
     
     
-    @nnx.jit(static_argnames=["N_supervision", "n", "T", "halt_explore_prob"])
-    def train_step(model, optimizer, carry, batch, y_init, z_init, N_supervision, n, T, halt_explore_prob, ema_model, key):
+    @nnx.jit(static_argnames=["N_supervision", "n", "T", "halt_explore_prob", "use_act"])
+    def train_step(model, optimizer, carry, batch, y_init, z_init, N_supervision, n, T, halt_explore_prob, use_act, puzzle_emb_weight_decay, ema_weight, ema_model, key):
         # update carry (if halted, update with init and batch)
         carry = pre_update_carry(carry, batch, z_init, y_init)
         # 1 N_supervision step
@@ -226,7 +229,7 @@ def main(cfg):
         # 1-step approx BPTT
         grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
         (loss, (y, z, y_loss, q_loss, y_preds, q_logits)), grads = grad_fn(
-            model, carry.x_input, carry.aug_puzzle_idx, y, z, carry.y_true, n
+            model, carry.x_input, carry.aug_puzzle_idx, y, z, carry.y_true, n, use_act
         )
         optimizer.update(model, grads)
 
@@ -234,18 +237,17 @@ def main(cfg):
         model_state = nnx.state(model)
         model_state.puzzle_emb.embedding = model_state.puzzle_emb.embedding.at[carry.aug_puzzle_idx].add(
             - puzzle_emb_schedule(optimizer.step)
-            * cfg.optim.puzzle_emb_weight_decay
+            * puzzle_emb_weight_decay
             * model_state.puzzle_emb.embedding[carry.aug_puzzle_idx]
         )
         nnx.update(model, model_state)
 
         # update halt flag
-        carry, key = post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, key)
+        carry, key = post_update_carry(carry, q_logits, z, y, N_supervision, halt_explore_prob, use_act, key)
 
-        # compute metrics (11 = padding)
         cell_correct = y_preds == carry.y_true # (batch_size, 900)
-        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < 11)
-        cell_acc = cell_correct.mean(where=(carry.y_true < 11) & (carry.halted[..., jnp.newaxis]))
+        puzzle_correct = cell_correct.all(axis=-1, where=carry.y_true < PADDING_TOKEN)
+        cell_acc = cell_correct.mean(where=(carry.y_true < PADDING_TOKEN) & (carry.halted[..., jnp.newaxis]))
         puzzle_acc = puzzle_correct.mean(where=carry.halted)
         metrics = {
             "loss": loss,
@@ -260,14 +262,14 @@ def main(cfg):
             "n_supervision_steps": carry.step.mean(where=carry.halted),
             "n_supervision_steps_all": carry.step.mean(),
         }
-        if cfg.recursion.act:
+        if use_act:
             q_acc = ((q_logits.reshape(-1) > 0) == puzzle_correct).mean(where=carry.halted)
             metrics["q_acc"] = q_acc
 
         if ema_model is not None:
             new_ema_state = jax.tree.map(
                 lambda new, old: (
-                    None if new is None else (1.0 - cfg.ema_weight) * new + cfg.ema_weight * old
+                    None if new is None else (1.0 - ema_weight) * new + ema_weight * old
                 ),
                 nnx.state(model),
                 nnx.state(ema_model),
@@ -379,7 +381,8 @@ def main(cfg):
             carry, metrics, key = train_step(
                 model, optimizer, carry, batch, y_init, z_init,
                 cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
-                cfg.recursion.halt_explore_prob,
+                cfg.recursion.halt_explore_prob, cfg.recursion.act,
+                cfg.optim.puzzle_emb_weight_decay, cfg.ema_weight,
                 ema_model if cfg.use_ema else None,
                 key
             )
@@ -424,4 +427,4 @@ def main(cfg):
 
 
 if __name__ == "__main__":
-    run(main)
+    sws_run(main)
