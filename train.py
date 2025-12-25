@@ -300,11 +300,9 @@ def main(cfg):
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
     
     
+    ckpt_dir = cfg.ckpt_dir if cfg.ckpt_dir.startswith("gs://") else os.path.join(os.getcwd(), cfg.ckpt_dir)
     if jax.process_index() == 0:
-        ckpt_dir_prefix = cfg.ckpt_dir if cfg.ckpt_dir.startswith("gs://") else os.path.join(os.getcwd(), cfg.ckpt_dir)
-        ckpt_dir = os.path.join(ckpt_dir_prefix, run.id)
         os.makedirs(ckpt_dir, exist_ok=True)
-    ckpt_dir = broadcast_string(ckpt_dir)
     ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
     ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
 

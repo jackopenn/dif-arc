@@ -1,35 +1,5 @@
 import jax
 from datetime import datetime
-from jax.experimental import multihost_utils
-import numpy as np
-
-def broadcast_string(s: str | None) -> str:
-    """
-    Broadcast a UTF-8 string from `root` process to all JAX processes.
-    Host-side utility (not inside jit).
-    """
-    # Step 1: broadcast length (scalar int32)
-    if jax.process_index() == 0:
-        b = s.encode("utf-8")
-        n = np.array(len(b), dtype=np.int32)
-    else:
-        b = b""
-        n = np.array(0, dtype=np.int32)
-
-    n = multihost_utils.broadcast_one_to_all(n)
-    n = int(np.asarray(n))  # scalar -> Python int
-
-    # Step 2: broadcast the bytes as uint8 array of fixed length n
-    if jax.process_index() == 0:
-        arr = np.frombuffer(b, dtype=np.uint8)
-    else:
-        arr = np.zeros((n,), dtype=np.uint8)
-
-    # (root already has correct length; others have zeros of same shape)
-    arr = multihost_utils.broadcast_one_to_all(arr)
-    arr = np.asarray(arr, dtype=np.uint8)
-
-    return bytes(arr.tolist()).decode("utf-8")
 
 
 # https://github.com/karpathy/nanochat/blob/bc51da8baca66c54606bdd75c861c82ced90dcb0/nanochat/common.py#L183C1-L190C13
