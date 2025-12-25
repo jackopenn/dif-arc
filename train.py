@@ -299,6 +299,15 @@ def main(cfg):
     y_init = initializer(y_key, (cfg.model.hidden_dim,), jnp.bfloat16)
     z_init = initializer(z_key, (cfg.model.hidden_dim,), jnp.bfloat16) 
     
+    
+    if jax.process_index() == 0:
+        ckpt_dir_prefix = cfg.ckpt_dir if cfg.ckpt_dir.startswith("gs://") else os.path.join(os.getcwd(), cfg.ckpt_dir)
+        ckpt_dir = os.path.join(ckpt_dir_prefix, run.id)
+        os.makedirs(ckpt_dir, exist_ok=True)
+    ckpt_dir = broadcast_string(ckpt_dir)
+    ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
+    ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
+
 
     # init data loader
     train_data_loader = get_data_loader(
@@ -319,15 +328,6 @@ def main(cfg):
         drop_remainder=False,
         shard_by_jax_process=True
     )
-
-
-    if jax.process_index() == 0:
-        ckpt_dir_prefix = cfg.ckpt_dir if cfg.ckpt_dir.startswith("gs://") else os.path.join(os.getcwd(), cfg.ckpt_dir)
-        ckpt_dir = os.path.join(ckpt_dir_prefix, run.id)
-        os.makedirs(ckpt_dir, exist_ok=True)
-    ckpt_dir = broadcast_string(ckpt_dir)
-    ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
-    ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
 
 
     # init profiler
