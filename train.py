@@ -14,7 +14,7 @@ from datetime import datetime
 from dataset import get_data_loader
 from modelling.model import Model
 from modelling.optimizers import adamw_atan2, sign_sgdw
-from utils import DummyWandb, MetricLogger
+from utils import DummyWandb, MetricLogger, broadcast_string
 from evaluate import evaluate
 from functools import partial
 
@@ -325,7 +325,7 @@ def main(cfg):
         ckpt_dir_prefix = cfg.ckpt_dir if cfg.ckpt_dir.startswith("gs://") else os.path.join(os.getcwd(), cfg.ckpt_dir)
         ckpt_dir = os.path.join(ckpt_dir_prefix, run.id)
         os.makedirs(ckpt_dir, exist_ok=True)
-    ckpt_dir = jax.experimental.multihost_utils.broadcast_one_to_all(ckpt_dir).item()
+    ckpt_dir = broadcast_string(ckpt_dir)
     ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
     ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
 
