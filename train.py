@@ -14,7 +14,7 @@ from datetime import datetime
 from dataset import get_data_loader
 from modelling.model import Model
 from modelling.optimizers import adamw_atan2, sign_sgdw
-from utils import DummyWandb, MetricLogger, broadcast_string
+from utils import DummyWandb, MetricLogger
 from evaluate import evaluate
 from functools import partial
 
