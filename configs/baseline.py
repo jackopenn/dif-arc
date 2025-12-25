@@ -27,10 +27,6 @@ def get_config():
 
     cfg.model.input_size = 30
 
-    #vision mode
-    cfg.model.vision_mode = False
-    cfg.model.patch_size = None
-
     cfg.recursion.N_supervision = 16
     cfg.recursion.n = 4
     cfg.recursion.T = 3
