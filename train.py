@@ -410,7 +410,10 @@ def main(cfg):
                 run.log_model(f"{ckpt_dir}/{step}", name=f"{run.id}_model", aliases=[f"step_{step}"])    
 
         if step > 0 and step % cfg.eval.eval_every == 0:
-            seq_len = cfg.model.puzzle_emb_len + cfg.model.input_size * cfg.model.input_size
+            seq_len = cfg.model.input_size * cfg.model.input_size
+            if cfg.model_type == "vision":
+                seq_len = seq_len // (cfg.model.patch_size ** 2)
+            seq_len += cfg.model.puzzle_emb_len
             val_metrics = evaluate(
                 ema_model if cfg.use_ema else model,
                 val_data_loader_factory, y_init, z_init,
