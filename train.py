@@ -418,7 +418,7 @@ def main(cfg):
                 ema_model if cfg.use_ema else model,
                 val_data_loader_factory, y_init, z_init,
                 cfg.recursion.N_supervision, cfg.recursion.n, cfg.recursion.T,
-                cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size, seq_len
+                cfg.eval.pass_ks, shard_data, cfg.data.eval_batch_size, seq_len, cfg.model.input_size
             )
             if jax.process_index() == 0:
                 val_logger.log({**val_metrics, "step_time": step_time, "step": step})

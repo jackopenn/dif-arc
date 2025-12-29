@@ -75,7 +75,7 @@ def get_top_k_preds(example_preds, k):
 
 
 
-def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pass_ks, shard_data, batch_size, seq_len):
+def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pass_ks, shard_data, batch_size, seq_len, input_size):
     
     # preds = {
     #     "abcde1g7": {
@@ -144,8 +144,8 @@ def evaluate(model, data_loader_factory, y_init, z_init, N_supervision, n, T, pa
             d8_augs = d8_augs[:last_batch_size]
             colour_augs = colour_augs[:last_batch_size]
         
-        y_preds = np.array(y_preds.reshape(-1, 30, 30))
-        y_trues = np.array(y_trues.reshape(-1, 30, 30))
+        y_preds = np.array(y_preds.reshape(-1, input_size, input_size))
+        y_trues = np.array(y_trues.reshape(-1, input_size, input_size))
         
         
         for i in range(y_preds.shape[0]):
