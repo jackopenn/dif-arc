@@ -10,7 +10,8 @@ def get_config():
     
     cfg = Config()
     cfg.seed = 69420
-    cfg.model_type = "model"
+
+    cfg.model_type = "vision"
     cfg.model.vocab_size = 12 # 10 colours, 1 border, 1 padding
     cfg.model.hidden_dim = 32
     cfg.model.intermediate_dim = lambda: 1 * cfg.model.hidden_dim
@@ -24,8 +25,9 @@ def get_config():
     cfg.model.rope_theta = 10000
     cfg.model.puzzle_vocab_size = lambda: get_puzzle_vocab_size(cfg.data.data_dir)
     cfg.model.puzzle_emb_len = 1
-    
-    cfg.model.input_size = 30
+
+    cfg.model.input_size = 64
+    cfg.model.patch_size = 2
     
     cfg.recursion.N_supervision = 2
     cfg.recursion.n = 2

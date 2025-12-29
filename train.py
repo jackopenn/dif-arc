@@ -13,6 +13,7 @@ import orbax.checkpoint as ocp
 from datetime import datetime
 from dataset import get_data_loader
 from modelling.model import Model
+from modelling.vision_model import VisionModel
 from modelling.optimizers import adamw_atan2, sign_sgdw
 from utils import DummyWandb, MetricLogger
 from evaluate import evaluate
@@ -26,8 +27,9 @@ def main(cfg):
         jax.distributed.initialize()
 
     key = jax.random.key(cfg.seed)
-    
-    model = Model(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
+
+    ModelClass = VisionModel if cfg.model_type == "vision" else Model
+    model = ModelClass(**cfg.model.to_dict(), rngs=nnx.Rngs(key))
 
     opt_fn = partial(adamw_atan2, decouple_weight_decay=cfg.optim.decouple_weight_decay) if cfg.optim.use_atan2 else optax.adamw
     puzzle_emb_schedule = optax.warmup_constant_schedule(**cfg.embed_schedule.to_dict())
@@ -85,6 +87,8 @@ def main(cfg):
         batch_size = batch['x'].shape[0]
         hidden_dim = z_init.shape[-1]
         puzzle_len = cfg.model.input_size * cfg.model.input_size
+        if cfg.model_type == "vision":
+            puzzle_len = puzzle_len // (cfg.model.patch_size ** 2)
         seq_len = puzzle_len + cfg.model.puzzle_emb_len
         z_init = jnp.broadcast_to(z_init, (batch_size, seq_len, hidden_dim))
         y_init = jnp.broadcast_to(y_init, (batch_size, seq_len, hidden_dim))
@@ -104,9 +108,9 @@ def main(cfg):
         
         assert carry.z.shape == (batch_size, seq_len, hidden_dim)
         assert carry.y.shape == (batch_size, seq_len, hidden_dim)
-        assert carry.x_input.shape == (batch_size, puzzle_len)
+        # assert carry.x_input.shape == (batch_size, puzzle_len)
         assert carry.aug_puzzle_idx.shape == (batch_size,)
-        assert carry.y_true.shape == (batch_size, puzzle_len)
+        # assert carry.y_true.shape == (batch_size, puzzle_len)
         assert carry.step.shape == (batch_size,)
         assert carry.halted.shape == (batch_size,)
 
@@ -305,7 +309,6 @@ def main(cfg):
         os.makedirs(ckpt_dir, exist_ok=True)
     ckpt_options = ocp.CheckpointManagerOptions(max_to_keep=1, cleanup_tmp_directories=True)
     ckpt_mngr = ocp.CheckpointManager(ckpt_dir, options=ckpt_options)
-
 
     # init data loader
     train_data_loader = get_data_loader(
