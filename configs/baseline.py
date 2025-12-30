@@ -11,6 +11,7 @@ def get_config():
     cfg = Config()
     cfg.seed = 69420
     
+    cfg.model_type = "model"
     cfg.model.vocab_size = 12 # 10 colours, 1 border, 1 padding
     cfg.model.hidden_dim = 512
     cfg.model.intermediate_dim = 1536
