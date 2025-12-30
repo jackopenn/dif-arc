@@ -68,6 +68,7 @@ class Model(nnx.Module):
                 act_fn=act_fn,
                 rope_theta=rope_theta,
                 use_bias=use_bias,
+                vision_rope=True,
                 rngs=rngs
             )
             for _ in range(num_layers)
